@@ -32,8 +32,12 @@ if (existsSync(path)) {
     name: string;
   }[];
   probe.close();
-  const isPriorPrototypesVolume =
-    bookingsCols.length > 0 && !bookingsCols.some((c) => c.name === "building_id");
+  // A file this app's own migrations built always has bookings.building_id.
+  // Anything else — the old shape, or no bookings table at all (what the
+  // first version of this guard left behind: it dropped the table, then
+  // migrate() skipped recreating it because the old app's journal entries
+  // carry later timestamps than this app's migrations) — gets wiped.
+  const isPriorPrototypesVolume = !bookingsCols.some((c) => c.name === "building_id");
   if (isPriorPrototypesVolume) {
     for (const suffix of ["", "-wal", "-shm", "-journal"]) rmSync(`${path}${suffix}`, { force: true });
   }
