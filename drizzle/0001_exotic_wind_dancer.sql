@@ -1,1 +1,0 @@
-ALTER TABLE `bookings` ADD `checked_in_at` text;

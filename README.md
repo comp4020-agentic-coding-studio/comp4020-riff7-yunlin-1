@@ -1,44 +1,48 @@
-# Room board
+# Your prototype
 
-A live board for a handful of ANU Library group study rooms: who's booked
-what today, what's free right now, and a form to take a free slot or give one
-back. It's a slice of the real thing --- [ANU Library's group study room
-booking system](https://anulib.anu.edu.au/news-events/news/new-and-improved-group-study-room-booking-system),
-which lives behind a separate login on its own site and only ever shows you
-what's booked, not what's actually happening in a room right now.
+This is a room-booking prototype for the ANU campus. A static SVG campus map
+(`src/pages/index.astro`) shows a handful of buildings; clicking one opens its
+building page (`src/pages/building/[id].astro`), which lists that building's
+rooms from `src/lib/campus.ts` alongside a live availability status —
+available, busy, or closed — computed against a SQLite `bookings` table
+(`src/lib/schema.ts`, `src/lib/bookings.ts`). Visitors can filter the room
+list by date, time, and status, and book any available room through a
+right-hand booking panel (`src/components/BookingPanel.astro`).
 
 ## What good looks like here
 
-The one annoyance this prototype is built to fix: standing outside a room
-that's shown as booked, with no way to tell from the booking system alone
-whether anyone's actually turned up. So the board's one piece of decoration
---- the red highlight on a booking --- means exactly one thing: *this slot is
-happening right now*, computed from the wall clock in Canberra, not from
-whether someone remembered to check in. Everything else on the page is plain
-text; taste here is what didn't get a colour.
+We read the brief around a lightweight, no-account booking flow for shared
+teaching spaces, and looked at how the starter already separated static
+campus data (`campus.ts`) from live booking state (`schema.ts`/`bookings.ts`)
+before deciding how far to take it. The core decision was to keep "room data"
+and "booking data" separate: buildings, rooms, and their base status
+(available/closed) are fixed data describing the campus, while bookings are
+the only thing that changes a room's live status to busy. `roomLiveStatus` in
+`src/lib/bookings.ts` is the single place that merges the two, so the map
+markers and the room panel all agree on what "available" means
+at a given date and time.
 
-Enforced by `spec/booking.test.ts`, driven against the deployed app, not the
-source:
+We chose to make the booking panel work both with and without JavaScript:
+with JS it submits via `fetch` and updates the room list in place; without
+JS, the same form posts to `src/pages/api/bookings.ts`, which does the same
+validation and redirects back with a 303 so the page reflects the new
+booking on reload. Rejecting overlapping bookings is enforced entirely
+server-side in `isOverlapping`/`createBooking`, so a double-booking is
+impossible to force through the UI, a stale page, or a replayed request —
+this was a judgement call to put trust only in the server, not the client.
 
-- a booking made now is still there on a fresh page load (the brief's core
-  persistence promise)
-- two bookings for the same room that overlap in time can't both exist --- the
-  second is rejected and the first is untouched
-- cancelling a booking frees the slot for someone else to take
-- a booking made in one tab reaches another tab open on the same date, over
-  the same server-sent-events stream the starter shipped with
+What we chose not to build: user accounts or authentication (bookings are
+attributed to a free-text name), recurring bookings, editing or cancelling
+an existing booking, and a real campus data feed — the building and room
+list in `campus.ts` is static seed data rather than pulled from a live
+source, which is called out in that file's own comment.
 
-Deliberately left out, as judgement calls rather than enforced rules: no
-login (the real system's biggest source of friction, and out of scope for a
-prototype with no real ANU identities to check), no room search across all of
-ANU (three seeded rooms are enough to show the mechanic), and no recurring
-bookings (a booking board that only ever books one slot at a time is honest
-about what it models --- a real timetable is a different, bigger system).
-
-## Riff: who actually turned up
-
-The board said what was booked, never whether anyone was in the room. A slot
-happening now can now be checked into ("I'm here"); if nobody has after
-10 minutes, the board says so in plain text and offers "Release" so someone
-standing outside can take it. Presence is words, not colour --- the one accent
-still means only "happening now". Enforced by `spec/presence.test.ts`.
+Some of this is enforced by `spec/`: `spec/routes.ts` lists every page the
+invariants run against (so a route without a matching entry isn't checked at
+all), and `spec/readme.test.ts` checks that this file is rendered in full at
+`/readme/`. Other checks assert on route status codes and basic page
+structure. What isn't spec-enforced, and was a judgement call instead, is the
+UI/UX split above: which parts of the booking flow live client-side for a
+snappier experience versus what must be re-validated on the server, and how
+much of the campus map is worth modelling versus stubbing as static data for
+this prototype.

@@ -1,166 +1,788 @@
+/* Colour palette and shared primitives — see WEBSITE.md for the swatch
+   reference and the asset dictionary these classes belong to.
+   Palette is ANU's brand set: black/white carry the page, gold tint is the
+   only background tone, and ANU gold is a highlight used sparingly (nav
+   accents, the selected day, focus) — never as a fill covering more than a small
+   fraction of any view.
+   One deliberate exception: --colour-busy-accent is a non-brand blue used
+   only for the thin accent bars on the dark room panel. */
 :root {
-  --paper: #f6f3ec;
-  --ink: #23211d;
-  --line: #d8d2c4;
-  --seal: #8a3324;
+  --colour-black: #000000;
+  --colour-white: #ffffff;
+  --colour-gold: #be830e;
+  --colour-gold-tint: #f5edde;
+  --colour-unigrey: #333333;
+  --colour-border: #d9d3c4;
+
+  --colour-available: #1e6b3d;
+  --colour-available-bg: #e3f0e6;
+  --colour-busy: #a13324;
+  --colour-busy-bg: #f3e2de;
+  --colour-closed: #5a5a5a;
+  --colour-closed-bg: #ececec;
+  --colour-past-bg: #dcdcdc;
+  /* Accent for "booked now" in the room panel, where the red busy tone reads
+     as an error on a dark card. Only ever a thin bar, never text. */
+  --colour-busy-accent: #7b83eb;
+
+  --radius: 0.5rem;
+  /* The nav bar's fixed height, so the home map can fill exactly what's
+     left of the viewport below it. */
+  --nav-height: 3.3rem;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  padding: 2rem;
-  background: var(--paper);
-  color: var(--ink);
-  font-family: Georgia, "Times New Roman", Times, serif;
+  padding: 0;
+  font-family: system-ui, sans-serif;
   line-height: 1.6;
+  color: var(--colour-unigrey);
+  background: var(--colour-white);
 }
 
 main {
-  max-width: 42rem;
+  max-width: 60rem;
   margin: 0 auto;
+  padding: 1.5rem;
+}
+
+/* Home page: the map runs edge to edge, so main gives up its column. */
+main.full-bleed {
+  max-width: none;
+  padding: 0;
 }
 
 a {
-  color: #0b5fff;
+  color: var(--colour-black);
 }
 
-nav[aria-label="site"] {
+a:hover {
+  color: var(--colour-gold);
+}
+
+/* Nav bar — reused on every page. Black bar, gold used only for the active
+   accent underline, keeping gold's footprint small. */
+.site-nav {
   display: flex;
-  gap: 1rem;
+  align-items: center;
+  gap: 1.5rem;
+  height: var(--nav-height);
+  padding: 0 1.5rem;
+  white-space: nowrap;
+  overflow-x: auto;
+  background: var(--colour-black);
+  border-bottom: 3px solid var(--colour-gold);
+}
+
+.site-nav a {
+  color: var(--colour-white);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.site-nav a:hover {
+  color: var(--colour-gold);
+}
+
+.site-nav .brand {
+  font-weight: 700;
+  color: var(--colour-gold);
+}
+
+/* Keeps all three links on one line (so the fixed height holds) down to
+   320px wide. */
+@media (max-width: 26rem) {
+  .site-nav {
+    gap: 1rem;
+    padding: 0 1rem;
+  }
+}
+
+/* Small grey meta line, e.g. the building code under a building page title. */
+.card-meta {
+  font-size: 0.85rem;
+  color: var(--colour-unigrey);
+}
+
+/* Campus map: MapLibre over self-hosted OSM tiles (public/maps/anu.pmtiles).
+   Fills the viewport below the nav; the help section sits under it. 100vh is
+   the fallback where dvh isn't supported. */
+.campus-map {
+  width: 100%;
+  height: calc(100vh - var(--nav-height));
+  height: calc(100dvh - var(--nav-height));
+  background: var(--colour-gold-tint);
+  overflow: hidden;
+}
+
+/* Positioning context for the overlay card over the map. */
+.campus-map-frame {
+  position: relative;
+}
+
+/* Bottom-left card over the map: tells sighted users what to do and that the
+   Help section (and the buildings with no marker) sit below. Bottom-left is
+   clear of MapLibre's zoom buttons (top-right) and compact attribution
+   (bottom-right). z-index sits above MapLibre's controls (2) and below the
+   room panel (50). */
+.map-overlay {
+  position: absolute;
+  left: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 3;
+  max-width: calc(100% - 4rem);
+  padding: 0.5rem 0.75rem;
+  background: var(--colour-white);
+  border: 1px solid var(--colour-border);
+  border-left: 3px solid var(--colour-gold);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
   font-size: 0.9rem;
+  line-height: 1.4;
 }
 
-nav[aria-label="date"] {
+.map-overlay-tagline {
+  margin: 0 0 0.2rem;
+  font-weight: 600;
+  color: var(--colour-black);
+}
+
+.map-overlay a {
+  font-weight: 600;
+}
+
+.map-overlay a:focus-visible {
+  outline: 3px solid var(--colour-gold);
+  outline-offset: 2px;
+}
+
+/* Building marker. MapLibre positions .map-marker with an inline transform,
+   so never set transform on it; the hover lift lives on .marker-pin. */
+.map-marker {
+  display: block;
+  width: 1.5rem;
+  height: 1.5rem;
+  text-decoration: none;
+  color: var(--colour-unigrey);
+}
+
+.map-marker:hover,
+.map-marker:focus-visible {
+  z-index: 10;
+  outline: none;
+}
+
+.marker-pin {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50% 50% 50% 0;
+  background: var(--colour-black);
+  border: 3px solid var(--colour-gold);
+  transform: rotate(-45deg);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease;
+}
+
+.map-marker:hover .marker-pin,
+.map-marker:focus-visible .marker-pin {
+  transform: rotate(-45deg) scale(1.2);
+}
+
+.map-marker:focus-visible .marker-pin {
+  outline: 3px solid var(--colour-black);
+  outline-offset: 3px;
+}
+
+/* Hover card — opens above the pin, or below it near the map's top edge. */
+.marker-card {
+  position: absolute;
+  bottom: calc(100% + 0.6rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 12rem;
+  display: none;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0 0 0.6rem;
+  background: var(--colour-white);
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.map-marker.card-below .marker-card {
+  bottom: auto;
+  top: calc(100% + 0.6rem);
+}
+
+.map-marker:hover .marker-card,
+.map-marker:focus-visible .marker-card {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-block: 1.25rem;
-  font-size: 0.95rem;
 }
 
-.error {
-  border: 1px solid var(--ink);
-  border-width: 2px;
-  color: var(--ink);
-  padding: 0.6rem 0.8rem;
-  border-radius: 0.25rem;
-  font-size: 0.95rem;
+.marker-card-image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-bottom: 0.4rem;
+  object-fit: cover;
+  background:
+    linear-gradient(135deg, transparent 48%, var(--colour-border) 49%, var(--colour-border) 51%, transparent 52%),
+    var(--colour-gold-tint);
 }
 
-.rooms {
-  display: grid;
-  gap: 1rem;
+.marker-card-name {
+  padding-inline: 0.7rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--colour-black);
+}
+
+.marker-card-meta {
+  padding-inline: 0.7rem;
+  font-size: 0.8rem;
+  color: var(--colour-available);
+}
+
+/* Help section under the full-width map; keeps a readable column. */
+.map-help {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+/* Plain text links to every building page, including the ones with no map
+   marker. Also the no-JS way to reach each building. */
+.building-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  color: var(--colour-black);
+}
+
+form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
   margin-block: 1.5rem;
 }
 
-.room {
-  border: 1px solid var(--line);
-  border-radius: 0.25rem;
-  padding: 0.75rem 1rem;
+input {
+  flex: 1;
+  min-width: 12rem;
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
 }
 
-.room h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1.05rem;
+button {
+  padding: 0.4rem 1rem;
+  font: inherit;
+  background: var(--colour-black);
+  color: var(--colour-white);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
 }
 
-.room ul {
-  list-style: none;
+button:hover {
+  background: var(--colour-gold);
+  color: var(--colour-black);
+}
+
+#messages {
+  padding-inline-start: 1.2rem;
+}
+
+/* Booking form: appears once a free slot is picked in the calendar. */
+.booking-form {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
+  background: var(--colour-gold-tint);
+}
+
+.booking-form[hidden] {
+  display: none;
+}
+
+/* Inline feedback after a booking attempt. */
+.building-floorplan {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 1.5rem auto 0;
+  border-radius: var(--radius);
+  border: 1px solid var(--colour-border, #ddd);
+}
+
+.booking-feedback {
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+}
+
+.booking-feedback.success {
+  color: var(--colour-available);
+  background: var(--colour-available-bg);
+}
+
+.booking-feedback.error {
+  color: var(--colour-busy);
+  background: var(--colour-busy-bg);
+}
+
+/* The live region is always in the page so screen readers announce updates;
+   collapse it while it has nothing to say. */
+.booking-feedback:empty {
   margin: 0;
   padding: 0;
-  display: grid;
-  gap: 0.4rem;
 }
 
-.room li {
+.booking-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+}
+
+.booking-form select {
+  padding: 0.4rem 0.6rem;
+  font: inherit;
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
+}
+
+.booking-summary {
+  flex-basis: 100%;
+  margin: 0;
+  font-weight: 600;
+  color: var(--colour-black);
+}
+
+/* Text only screen readers get: half-hour column headers, cell states. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Day strip: 14 day links plus previous/next. Wraps so it never widens the
+   page; the selected day is the one place gold fills a control. */
+.day-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block: 1rem;
+  font-size: 0.85rem;
+}
+
+.day-strip ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.day-link {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.day-link[aria-current="date"] {
+  background: var(--colour-gold);
+  border-color: var(--colour-gold);
+  color: var(--colour-black);
+  font-weight: 600;
+}
+
+.day-step {
+  white-space: nowrap;
+}
+
+/* Legend: every state is named in text, never colour alone. */
+.calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+}
+
+.calendar-legend li {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.3rem 0.5rem;
-  border-radius: 0.2rem;
+  gap: 0.35rem;
 }
 
-.room li.active {
-  background: color-mix(in srgb, var(--seal) 12%, transparent);
-  border-left: 3px solid var(--seal);
+.legend-swatch {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid var(--colour-border);
 }
 
-.room li.active .time::after {
-  content: " — now";
-  color: var(--seal);
-  font-style: italic;
+/* Day grid: rooms down, 30-minute slots across. Only the wrapper scrolls
+   sideways; the room column stays put while it does. */
+.calendar-wrap {
+  position: relative;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
 }
 
-.room li.empty {
-  color: #6b6558;
-  font-style: italic;
+.calendar {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.8rem;
 }
 
-.time {
-  font-variant-numeric: tabular-nums;
-  min-width: 8.5rem;
+.calendar caption {
+  padding: 0.5rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--colour-black);
 }
 
-.who {
-  flex: 1;
+.calendar th[scope="row"],
+.calendar thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 11rem;
+  padding: 0.3rem 0.6rem;
+  text-align: left;
+  background: var(--colour-white);
+  border-right: 1px solid var(--colour-border);
 }
 
-.room form {
-  margin: 0;
-}
-
-.room button {
-  font: inherit;
-  font-size: 0.85rem;
-  background: none;
-  border: 1px solid var(--line);
-  border-radius: 0.2rem;
-  padding: 0.15rem 0.5rem;
-  cursor: pointer;
-}
-
-.book-form {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.75rem;
-  align-items: end;
-  border-top: 1px solid var(--line);
-  padding-top: 1.25rem;
-}
-
-.book-form h2 {
-  grid-column: 1 / -1;
-  margin: 0;
-  font-size: 1.05rem;
-}
-
-.book-form label {
+.room-name {
   display: block;
-  font-size: 0.85rem;
-  margin-bottom: 0.2rem;
+  font-weight: 600;
+  color: var(--colour-black);
+  white-space: nowrap;
 }
 
-.book-form input,
-.book-form select {
+.room-meta {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+/* Hour labels sit over the hour's first column and spill into the
+   half-hour column beside it. */
+.slot-head {
+  position: relative;
+  width: 2rem;
+  min-width: 2rem;
+  height: 1.6rem;
+  padding: 0;
+}
+
+.slot-hour {
+  position: absolute;
+  left: 0.15rem;
+  bottom: 0.2rem;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.slot {
+  width: 2rem;
+  min-width: 2rem;
+  height: 2.4rem;
+  padding: 0;
+  border-left: 1px solid var(--colour-white);
+  border-bottom: 1px solid var(--colour-white);
+}
+
+.slot-free {
+  background: var(--colour-available-bg);
+}
+
+.slot-free a {
+  display: block;
   width: 100%;
-  padding: 0.4rem 0.5rem;
-  font: inherit;
-  border: 1px solid var(--line);
-  border-radius: 0.2rem;
-  background: white;
+  height: 2.4rem;
 }
 
-.book-form button {
-  grid-column: 1 / -1;
-  font: inherit;
+.slot-free a:hover,
+.slot-free a:focus-visible,
+.slot-selected a {
+  outline: 3px solid var(--colour-gold);
+  outline-offset: -3px;
+}
+
+/* The four cell states have to read apart at a glance (and in the legend,
+   which reuses these classes): free is pale green, booked a red hatch, past
+   a flat mid grey, closed a darker grey. */
+.slot-booked {
+  background: repeating-linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--colour-busy) 55%, transparent) 0 3px,
+      transparent 3px 7px
+    ),
+    var(--colour-busy-bg);
+}
+
+.slot-closed {
+  background: color-mix(in srgb, var(--colour-closed) 45%, var(--colour-closed-bg));
+}
+
+.slot-past {
+  background: var(--colour-past-bg);
+}
+
+/* Only shown on narrow screens, where most of the day is off to the right. */
+.calendar-hint {
+  display: none;
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+}
+
+/* Every free cell is a tab stop, so keyboard users get a way past the grid.
+   Hidden until it has focus. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+}
+
+.skip-link:focus {
+  position: static;
+  display: inline-block;
+  margin-bottom: 0.5rem;
+  padding: 0.3rem 0.6rem;
+  background: var(--colour-black);
+  color: var(--colour-white);
+  border-radius: var(--radius);
+  outline: 3px solid var(--colour-gold);
+}
+
+@media (max-width: 40rem) {
+  .calendar-hint {
+    display: block;
+  }
+
+  /* A narrower room column leaves more of the day on screen. */
+  .calendar th[scope="row"],
+  .calendar thead th:first-child {
+    min-width: 7rem;
+    max-width: 7rem;
+    padding: 0.3rem 0.4rem;
+    font-size: 0.75rem;
+  }
+
+  .room-name {
+    white-space: normal;
+  }
+}
+
+/* Room availability panel: slides in from the right over the page when a
+   building is picked on the home page. Dark card, one row per room, with a
+   left accent bar keyed to status (the status is also written out). */
+.room-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  width: min(24rem, 100vw);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  overflow-y: auto;
+  background: var(--colour-black);
+  color: var(--colour-white);
+  border-left: 3px solid var(--colour-gold);
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.35);
+  animation: room-panel-in 0.2s ease-out;
+}
+
+.room-panel[hidden] {
+  display: none;
+}
+
+.room-panel:focus {
+  outline: none;
+}
+
+.room-panel:focus-visible {
+  outline: 3px solid var(--colour-gold);
+  outline-offset: -3px;
+}
+
+@keyframes room-panel-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-panel {
+    animation: none;
+  }
+}
+
+.room-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.room-panel-kicker {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--colour-gold);
+}
+
+.room-panel-title {
+  margin: 0;
+  font-size: 1.2rem;
+  line-height: 1.3;
+  color: var(--colour-white);
+}
+
+.room-panel-close {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  font-size: 1.4rem;
+  line-height: 1;
+  background: transparent;
+  color: var(--colour-white);
+  border: 1px solid var(--colour-unigrey);
+}
+
+.room-panel-close:hover,
+.room-panel-close:focus-visible {
+  background: var(--colour-gold);
+  color: var(--colour-black);
+}
+
+.room-panel-status {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.room-panel-status:empty {
+  display: none;
+}
+
+.room-panel-status.error {
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius);
+  color: var(--colour-busy);
+  background: var(--colour-busy-bg);
+}
+
+.room-panel-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.room-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--colour-unigrey);
+  border-left: 4px solid var(--colour-closed);
+  border-radius: var(--radius);
+}
+
+.room-row-available {
+  border-left-color: var(--colour-available);
+}
+
+.room-row-busy {
+  border-left-color: var(--colour-busy-accent);
+}
+
+.room-row-name {
+  font-weight: 600;
+  color: var(--colour-white);
+}
+
+.room-row-meta,
+.room-row-status {
+  font-size: 0.8rem;
+  color: var(--colour-white);
+}
+
+.room-row-status {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+.room-row-icon {
+  display: inline-block;
+  width: 1rem;
+  text-align: center;
+}
+
+.room-panel-book {
+  margin-top: auto;
   padding: 0.5rem 1rem;
-  border: 1px solid var(--ink);
-  border-radius: 0.2rem;
-  background: var(--ink);
-  color: var(--paper);
-  cursor: pointer;
+  text-align: center;
+  font-weight: 600;
+  text-decoration: none;
+  background: var(--colour-gold);
+  color: var(--colour-black);
+  border-radius: var(--radius);
 }
 
-.room li .presence {
-  font-size: 0.9em;
-  font-style: italic;
+.room-panel-book:hover,
+.room-panel-book:focus-visible {
+  background: var(--colour-white);
+  color: var(--colour-black);
 }

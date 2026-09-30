@@ -1,0 +1,169 @@
+---
+// Side panel listing a building's rooms and their status right now, opened
+// from the map markers or the building list on the home page.
+// No-JS baseline: the panel stays hidden and every trigger is a plain link to
+// /building/{id}/, so nothing is lost without scripts.
+// With JS: any click on an element carrying data-building-id opens the panel
+// and fills it from /api/rooms.json instead of navigating.
+---
+
+<aside
+  id="room-panel"
+  class="room-panel"
+  role="dialog"
+  aria-labelledby="room-panel-title"
+  tabindex="-1"
+  hidden
+>
+  <header class="room-panel-header">
+    <div>
+      <p class="room-panel-kicker">Rooms right now</p>
+      <h2 id="room-panel-title" class="room-panel-title">Room availability</h2>
+    </div>
+    <button type="button" class="room-panel-close" aria-label="Close room availability">&times;</button>
+  </header>
+
+  <p class="room-panel-status" role="status" aria-live="polite"></p>
+  <ul class="room-panel-list"></ul>
+
+  <a class="room-panel-book" href="/building/chifley/">Schedule booking</a>
+</aside>
+
+<script>
+  import { formatTime12 } from "../lib/time";
+
+  // One room as /api/rooms.json sends it (see roomLiveStatus in bookings.ts).
+  interface PanelRoom {
+    id: string;
+    name: string;
+    capacity: number;
+    status: "available" | "busy" | "closed";
+    until: string | null;
+    bookedBy: string | null;
+  }
+
+  const panel = document.getElementById("room-panel");
+  if (panel) {
+    const title = panel.querySelector<HTMLElement>(".room-panel-title")!;
+    const status = panel.querySelector<HTMLElement>(".room-panel-status")!;
+    const list = panel.querySelector<HTMLUListElement>(".room-panel-list")!;
+    const book = panel.querySelector<HTMLAnchorElement>(".room-panel-book")!;
+    const closeButton = panel.querySelector<HTMLButtonElement>(".room-panel-close")!;
+
+    // Text plus an icon for each status, so colour is never the only cue.
+    const STATUS_ICON: Record<string, string> = { available: "✓", busy: "●", closed: "✕" };
+
+    const statusText = (room: PanelRoom): string => {
+      const until = room.until ? formatTime12(room.until) : null;
+      if (room.status === "available") return until ? `Available now · until ${until}` : "Available now";
+      if (room.status === "busy") {
+        const who = room.bookedBy ? `Booked by ${room.bookedBy}` : "Booked now";
+        return until ? `${who} · until ${until}` : who;
+      }
+      // Closed with an `until` means outside opening hours; without one the
+      // room isn't bookable at all.
+      if (room.status === "closed") return until ? `Closed now · opens ${until}` : "Closed, not bookable";
+      return "Status unknown";
+    };
+    const STATUS_RANK: Record<string, number> = { available: 0, busy: 1, closed: 2 };
+
+    let controller: AbortController | null = null;
+    let trigger: HTMLElement | null = null;
+    let openId: string | null = null;
+
+    const el = (tag: string, className: string, text?: string) => {
+      const node = document.createElement(tag);
+      node.className = className;
+      if (text) node.textContent = text;
+      return node;
+    };
+
+    const roomRow = (room: PanelRoom) => {
+      const known = room.status in STATUS_ICON;
+      const item = el("li", known ? `room-row room-row-${room.status}` : "room-row");
+      const statusLine = el("span", "room-row-status");
+      const icon = el("span", "room-row-icon", STATUS_ICON[room.status] ?? "–");
+      icon.setAttribute("aria-hidden", "true");
+      statusLine.append(icon, document.createTextNode(statusText(room)));
+      item.append(
+        el("span", "room-row-name", room.name),
+        el("span", "room-row-meta", `Capacity ${room.capacity}`),
+        statusLine,
+      );
+      return item;
+    };
+
+    const load = async (buildingId: string) => {
+      controller?.abort();
+      const mine = new AbortController();
+      controller = mine;
+      list.replaceChildren();
+      status.textContent = "Loading rooms…";
+      status.className = "room-panel-status";
+      try {
+        // Fetched fresh on every open (no-store), so a booking made since
+        // shows up straight away.
+        const res = await fetch(`/api/rooms.json?building=${encodeURIComponent(buildingId)}`, {
+          signal: mine.signal,
+          cache: "no-store",
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as { rooms: PanelRoom[] };
+        if (controller !== mine) return;
+        // Free rooms first, then booked, then closed or unknown. Array sort is
+        // stable, so rooms keep their listed order within each group.
+        const sorted = [...data.rooms].sort(
+          (a, b) => (STATUS_RANK[a.status] ?? 2) - (STATUS_RANK[b.status] ?? 2),
+        );
+        list.replaceChildren(...sorted.map(roomRow));
+        status.textContent = data.rooms.length ? "" : "No rooms listed for this building.";
+      } catch (err) {
+        if (controller !== mine || (err as Error).name === "AbortError") return;
+        status.textContent = "Couldn't load rooms. Use Schedule booking to open the building page.";
+        status.className = "room-panel-status error";
+      }
+    };
+
+    const open = (buildingId: string, name: string, from: HTMLElement) => {
+      trigger = from;
+      openId = buildingId;
+      title.textContent = name;
+      book.href = `/building/${buildingId}/`;
+      panel.hidden = false;
+      panel.focus();
+      load(buildingId);
+    };
+
+    const close = () => {
+      if (panel.hidden) return;
+      controller?.abort();
+      controller = null;
+      openId = null;
+      panel.hidden = true;
+      trigger?.focus();
+      trigger = null;
+    };
+
+    // One delegated handler decides everything, so the click that opens the
+    // panel can never also count as a click outside it.
+    document.addEventListener("click", (event) => {
+      const target = event.target as Element;
+      if (panel.contains(target)) return;
+      const link = target.closest<HTMLAnchorElement>("a[data-building-id]");
+      if (link) {
+        // Let modified clicks (new tab, new window) do their normal thing.
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        const id = link.dataset.buildingId!;
+        if (id !== openId || panel.hidden) open(id, link.dataset.buildingName ?? "Rooms", link);
+        return;
+      }
+      close();
+    });
+
+    closeButton.addEventListener("click", close);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") close();
+    });
+  }
+</script>

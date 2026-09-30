@@ -16,12 +16,12 @@ const html = (await readme.compiledContent()).replace(/(src|href)="public\//g, '
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>{title}</title>
   </head>
   <body>
-    <nav aria-label="site">
-      <a href="/">Room board</a>
+    <nav class="site-nav" aria-label="site">
+      <a class="brand" href="/">ANU Room Finder</a>
+      <a href="/">Campus map</a>
       <a href="/readme/">About</a>
     </nav>
     <main set:html={html} />

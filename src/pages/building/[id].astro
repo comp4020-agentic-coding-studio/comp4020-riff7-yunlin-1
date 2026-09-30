@@ -1,0 +1,47 @@
+---
+import Layout from "../../components/Layout.astro";
+import AvailabilityCalendar from "../../components/AvailabilityCalendar.astro";
+import { getBuilding } from "../../lib/campus";
+import { bookingWindow } from "../../lib/bookings";
+
+const { id } = Astro.params;
+const building = getBuilding(id!);
+
+if (!building) {
+  return Astro.redirect("/");
+}
+
+// Keep ?date inside the booking window: a malformed date means today, one
+// outside the window is pulled to the nearest edge.
+const { first, last } = bookingWindow();
+const asked = Astro.url.searchParams.get("date") ?? "";
+let date = first;
+if (/^\d{4}-\d{2}-\d{2}$/.test(asked)) {
+  date = asked < first ? first : asked > last ? last : asked;
+}
+// The calendar only uses room/start if they name a free cell in this grid.
+const room = Astro.url.searchParams.get("room") ?? undefined;
+const start = Astro.url.searchParams.get("start") ?? undefined;
+const error = Astro.url.searchParams.get("error");
+// Set by the no-JS form path after a booking succeeds; the calendar checks
+// the room and times before it says anything.
+const booked = {
+  roomId: Astro.url.searchParams.get("booked") ?? undefined,
+  start: Astro.url.searchParams.get("from") ?? undefined,
+  end: Astro.url.searchParams.get("to") ?? undefined,
+};
+---
+
+<Layout title={`${building.name} — ANU Room Finder`}>
+  <a class="back-link" href="/">&larr; Back to campus map</a>
+  <h1>{building.name}</h1>
+  <p class="card-meta">{building.code}</p>
+
+  {error && <div class="booking-feedback error">{error}</div>}
+
+  <AvailabilityCalendar building={building} date={date} selectedRoomId={room} selectedStart={start} booked={booked} />
+
+  {building.floorplan && (
+    <img class="building-floorplan" src={building.floorplan} alt={`${building.name} floor plan`} />
+  )}
+</Layout>

@@ -1,0 +1,30 @@
+---
+import "../styles.css";
+
+interface Props {
+  title: string;
+  // Drops main's max-width and padding so a page (the home map) can run edge
+  // to edge. Other pages keep the readable centred column.
+  fullBleed?: boolean;
+}
+
+const { title, fullBleed = false } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <nav class="site-nav" aria-label="site">
+      <a class="brand" href="/">ANU Room Finder</a>
+      <a href="/">Campus map</a>
+    </nav>
+    <main class:list={{ "full-bleed": fullBleed }}>
+      <slot />
+    </main>
+  </body>
+</html>

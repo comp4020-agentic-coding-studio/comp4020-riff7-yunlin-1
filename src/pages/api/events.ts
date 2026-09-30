@@ -1,4 +1,5 @@
 import type { APIRoute } from "astro";
+import type { Message } from "../../lib/db";
 import { bus } from "../../lib/events";
 
 // The minimal server-sent-events (SSE) pattern: a long-lived streaming
@@ -7,7 +8,7 @@ import { bus } from "../../lib/events";
 // the simplest live channel that works everywhere — reach for WebSockets
 // only when the client needs to push over the same connection.
 export const GET: APIRoute = () => {
-  let onBooking: (payload: { date: string }) => void;
+  let onMessage: (message: Message) => void;
   let heartbeat: ReturnType<typeof setInterval>;
 
   const stream = new ReadableStream<string>({
@@ -17,14 +18,14 @@ export const GET: APIRoute = () => {
       // connection as idle
       controller.enqueue(": connected\n\n");
       heartbeat = setInterval(() => controller.enqueue(": ping\n\n"), 30_000);
-      onBooking = (payload) => {
-        controller.enqueue(`event: booking\ndata: ${JSON.stringify(payload)}\n\n`);
+      onMessage = (message) => {
+        controller.enqueue(`data: ${JSON.stringify(message)}\n\n`);
       };
-      bus.on("booking", onBooking);
+      bus.on("message", onMessage);
     },
     cancel() {
       clearInterval(heartbeat);
-      bus.off("booking", onBooking);
+      bus.off("message", onMessage);
     },
   });
 

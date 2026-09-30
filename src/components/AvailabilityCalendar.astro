@@ -1,0 +1,271 @@
+---
+// Day grid of room availability (rows are rooms, columns are 30-minute
+// slots) with a day strip above it and one booking form below it.
+// No-JS baseline: every day and every free cell is a plain link that reloads
+// the page with ?date / ?room / ?start, and the form is a normal POST.
+// With JS: clicking a free cell fills the form in place, the form submits via
+// fetch, and the booked cells flip to busy without a reload.
+import type { Building } from "../lib/campus";
+import {
+  addDays,
+  bookingWindow,
+  buildingDayGrid,
+  isSlotTime,
+  listBookingsForBuilding,
+  validEnds,
+} from "../lib/bookings";
+
+interface Props {
+  building: Building;
+  date: string;
+  selectedRoomId?: string;
+  selectedStart?: string;
+  // A booking the no-JS form path just made, from the redirect's query.
+  booked?: { roomId?: string; start?: string; end?: string };
+}
+
+const { building, date, selectedRoomId, selectedStart, booked } = Astro.props;
+
+// Built from the date string in UTC, so the label can't drift a day either
+// way whatever timezone the server runs in.
+const dayFormat = new Intl.DateTimeFormat("en-AU", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  timeZone: "UTC",
+});
+const dayLabel = (d: string) => dayFormat.format(new Date(`${d}T00:00:00Z`));
+
+const { first, last } = bookingWindow();
+const days = Array.from({ length: 14 }, (_, i) => addDays(first, i));
+const prevDay = date > first ? addDays(date, -1) : undefined;
+const nextDay = date < last ? addDays(date, 1) : undefined;
+
+const bookings = listBookingsForBuilding(building.id, date);
+const grid = buildingDayGrid(building, date, bookings);
+const slotHref = (roomId: string, start: string) => `?date=${date}&room=${roomId}&start=${start}#book`;
+
+// A room/start from the URL only counts if that cell is free right now;
+// anything else (wrong building, booked, past) falls back to the prompt.
+const selectedRow = grid.find((row) => row.room.id === selectedRoomId);
+const selectedCell = selectedRow?.cells.find((cell) => cell.start === selectedStart && cell.state === "free");
+const selection =
+  selectedRow && selectedCell
+    ? {
+        room: selectedRow.room,
+        start: selectedCell.start,
+        ends: validEnds(
+          bookings.filter((b) => b.roomId === selectedRow.room.id),
+          selectedCell.start,
+        ),
+      }
+    : undefined;
+
+const stateLabel = { booked: "Booked", closed: "Closed", past: "Past" };
+
+// Only confirm a booking for a room in this building with real slot times;
+// anything else in the URL is ignored.
+const bookedRoom = building.rooms.find((r) => r.id === booked?.roomId);
+const bookedMessage =
+  bookedRoom && booked?.start && booked.end && isSlotTime(booked.start) && isSlotTime(booked.end)
+    ? `Booked ${bookedRoom.name}, ${dayLabel(date)}, ${booked.start}–${booked.end}.`
+    : "";
+---
+
+<div class="availability" data-calendar data-date={date} data-day-label={dayLabel(date)}>
+  <nav class="day-strip" aria-label="Choose a day">
+    {prevDay && <a class="day-step" href={`?date=${prevDay}`}>&larr; Previous day</a>}
+    <ul>
+      {days.map((d) => (
+        <li>
+          <a class="day-link" href={`?date=${d}`} aria-current={d === date ? "date" : undefined}>
+            {dayLabel(d)}
+          </a>
+        </li>
+      ))}
+    </ul>
+    {nextDay && <a class="day-step" href={`?date=${nextDay}`}>Next day &rarr;</a>}
+  </nav>
+
+  <ul class="calendar-legend">
+    <li><span class="legend-swatch slot-free"></span>Free, select to book</li>
+    <li><span class="legend-swatch slot-booked"></span>Booked</li>
+    <li><span class="legend-swatch slot-closed"></span>Closed</li>
+    <li><span class="legend-swatch slot-past"></span>Past</li>
+  </ul>
+
+  <p class="calendar-hint">Scroll sideways for later times.</p>
+  <a class="skip-link" href="#book-section">Skip to booking form</a>
+  <div class="calendar-wrap">
+    <table class="calendar">
+      <caption>{building.name} availability, {dayLabel(date)}</caption>
+      <thead>
+        <tr>
+          <th scope="col">Room</th>
+          {grid[0]?.cells.map((cell) => (
+            <th scope="col" class="slot-head">
+              <span class={cell.start.endsWith(":00") ? "slot-hour" : "visually-hidden"}>{cell.start}</span>
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {grid.map((row) => (
+          <tr data-room-id={row.room.id} data-room-name={row.room.name}>
+            <th scope="row">
+              <span class="room-name">{row.room.name}</span>
+              <span class="room-meta">Capacity {row.room.capacity}</span>
+            </th>
+            {row.cells.map((cell) =>
+              cell.state === "free" ? (
+                <td
+                  class:list={["slot", "slot-free", { "slot-selected": cell === selectedCell }]}
+                  data-start={cell.start}
+                  data-end={cell.end}
+                >
+                  <a
+                    href={slotHref(row.room.id, cell.start)}
+                    aria-label={`Book ${row.room.name}, ${dayLabel(date)}, ${cell.start}–${cell.end}`}
+                  ></a>
+                </td>
+              ) : (
+                <td class={`slot slot-${cell.state}`} data-start={cell.start} data-end={cell.end}>
+                  <span class="visually-hidden">{stateLabel[cell.state]}</span>
+                </td>
+              ),
+            )}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+
+  <section class="booking-section" id="book-section" tabindex="-1" aria-labelledby="book-heading">
+    <h2 id="book-heading">Book a room</h2>
+    <p class="booking-prompt" hidden={!!selection}>Pick a free slot in the calendar to book it.</p>
+
+    <form class="booking-form" id="book" method="POST" action="/api/bookings" hidden={!selection}>
+      <input type="hidden" name="roomId" value={selection?.room.id ?? ""} />
+      <input type="hidden" name="buildingId" value={building.id} />
+      <input type="hidden" name="date" value={date} />
+      <input type="hidden" name="start" value={selection?.start ?? ""} />
+      <p class="booking-summary">
+        {selection && `${selection.room.name}, ${dayLabel(date)}, from ${selection.start}`}
+      </p>
+      <label>
+        Your name
+        <input type="text" name="bookedBy" required />
+      </label>
+      <label>
+        End
+        <select name="end" required>
+          {selection?.ends.map((end) => <option value={end}>{end}</option>)}
+        </select>
+      </label>
+      <button type="submit">Confirm booking</button>
+    </form>
+
+    <div
+      class:list={["booking-feedback", { success: bookedMessage }]}
+      role="status"
+      aria-live="polite"
+      tabindex="-1"
+    >{bookedMessage}</div>
+  </section>
+</div>
+
+<script>
+  const root = document.querySelector<HTMLElement>("[data-calendar]");
+  const form = root?.querySelector<HTMLFormElement>("#book");
+  if (root && form) {
+    const prompt = root.querySelector<HTMLElement>(".booking-prompt")!;
+    const summary = root.querySelector<HTMLElement>(".booking-summary")!;
+    const feedback = root.querySelector<HTMLElement>(".booking-feedback")!;
+    const field = (name: string) => form.elements.namedItem(name) as HTMLInputElement;
+    const endSelect = form.elements.namedItem("end") as HTMLSelectElement;
+    const dayLabel = root.dataset.dayLabel ?? "";
+
+    const show = (message: string, kind: "success" | "error") => {
+      feedback.textContent = message;
+      feedback.className = `booking-feedback ${kind}`;
+    };
+
+    // Fill the form from a free cell. Valid ends are the ends of the run of
+    // free cells from this one onwards, the same rule as validEnds() on the
+    // server.
+    const select = (cell: HTMLTableCellElement) => {
+      const row = cell.closest("tr")!;
+      const cells = Array.from(row.querySelectorAll<HTMLTableCellElement>("td[data-start]"));
+      const ends: string[] = [];
+      for (const c of cells.slice(cells.indexOf(cell))) {
+        if (!c.classList.contains("slot-free")) break;
+        ends.push(c.dataset.end!);
+      }
+      field("roomId").value = row.dataset.roomId!;
+      field("start").value = cell.dataset.start!;
+      endSelect.replaceChildren(...ends.map((end) => new Option(end, end)));
+      summary.textContent = `${row.dataset.roomName}, ${dayLabel}, from ${cell.dataset.start}`;
+      root.querySelectorAll(".slot-selected").forEach((c) => c.classList.remove("slot-selected"));
+      cell.classList.add("slot-selected");
+      form.hidden = false;
+      prompt.hidden = true;
+      field("bookedBy").focus();
+    };
+
+    root.addEventListener("click", (event) => {
+      const link = (event.target as Element).closest<HTMLAnchorElement>("td.slot-free a");
+      if (!link) return;
+      event.preventDefault();
+      select(link.parentElement as HTMLTableCellElement);
+      history.replaceState(null, "", link.href);
+    });
+
+    const markBooked = (row: HTMLElement, start: string, end: string) => {
+      row.querySelectorAll<HTMLTableCellElement>("td[data-start]").forEach((cell) => {
+        const s = cell.dataset.start!;
+        if (s < start || s >= end) return;
+        const label = document.createElement("span");
+        label.className = "visually-hidden";
+        label.textContent = "Booked";
+        cell.className = "slot slot-booked";
+        cell.replaceChildren(label);
+      });
+    };
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const fields = Object.fromEntries(new FormData(form)) as Record<string, string>;
+      try {
+        const res = await fetch(form.action, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(fields),
+        });
+        const data = (await res.json()) as { ok: boolean; error?: string };
+        if (!data.ok) {
+          show(data.error ?? "Something went wrong.", "error");
+          // Someone else booked part of this slot since the page loaded, so
+          // offer a fresh copy of the day.
+          if (res.status === 409) {
+            const reload = document.createElement("a");
+            reload.href = `${location.pathname}?date=${encodeURIComponent(root.dataset.date ?? "")}`;
+            reload.textContent = "Reload this day";
+            feedback.append(" ", reload);
+          }
+          return;
+        }
+        const row = root.querySelector<HTMLElement>(`tr[data-room-id="${CSS.escape(fields.roomId)}"]`);
+        if (row) markBooked(row, fields.start, fields.end);
+        show(`Booked ${row?.dataset.roomName}, ${dayLabel}, ${fields.start}–${fields.end}.`, "success");
+        field("bookedBy").value = "";
+        form.hidden = true;
+        prompt.hidden = false;
+        // The submit button just vanished with the form, so move focus to
+        // the message rather than dropping it on the page body.
+        feedback.focus();
+      } catch {
+        show("Network error, please try again.", "error");
+      }
+    });
+  }
+</script>

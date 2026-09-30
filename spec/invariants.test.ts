@@ -63,6 +63,8 @@ for (const route of ROUTES) {
       }
     });
 
+    // 30s timeout: a building page's day grid is ~850 elements, and one axe
+    // pass over it in jsdom takes 4-7s, past vitest's 5s default.
     it("has no axe violations", async () => {
       // The accessibility floor: axe-core's full rule set, run inside jsdom
       // so CI needs no browser. jsdom doesn't do layout, so the handful of
@@ -85,6 +87,6 @@ for (const route of ROUTES) {
           `${id}: ${help} (${nodes.map((node) => node.target.join(" ")).join("; ")})`,
       );
       expect(violations).toEqual([]);
-    });
+    }, 30_000);
   });
 }

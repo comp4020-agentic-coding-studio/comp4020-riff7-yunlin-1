@@ -1,214 +1,171 @@
 ---
-import { NO_SHOW_GRACE_MINUTES, addMinutes, canberraParts, minutesBetween, canberraWallTimeToEpochMs, nextReloadTargetEpochMs, shiftDate } from "../lib/clock";
-import { listBookingsForDate, listRooms } from "../lib/db";
-import "../styles.css";
+import Layout from "../components/Layout.astro";
+import RoomAvailabilityPanel from "../components/RoomAvailabilityPanel.astro";
+import { BUILDINGS, CLOSE, OPEN } from "../lib/campus";
+import { formatTime12 } from "../lib/time";
+import { canberraNow, listBookingsForBuilding, roomLiveStatus } from "../lib/bookings";
 
-// All times on this board are Canberra wall-clock text (see src/lib/schema.ts)
-// — "now" has to be read the same way, regardless of what timezone the
-// machine running the server happens to be in.
-const { date: today, time: nowTime } = canberraParts(new Date());
-const requestedDate = Astro.url.searchParams.get("date");
-const date = requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ? requestedDate : today;
-const isToday = date === today;
-const error = Astro.url.searchParams.get("error");
-
-const errorMessages: Record<string, string> = {
-  conflict: "That room is already booked for part of this time — pick another slot.",
-  date: "That's not a date the board understands — pick one from the calendar.",
-  invalid: "The end time has to be after the start time.",
-  name: "Enter your name so the room knows who's got it.",
-  room: "Pick a room.",
-};
-
-const rooms = listRooms();
-const bookingsForDate = listBookingsForDate(date);
-// Whether "now" falls inside a booking is decided here, in plain TS, and
-// carried on the data — the Astro compiler reads a bare `<` inside a JSX-like
-// expression as the start of a tag, so that comparison can't live inline in
-// the template below.
-const isNowWithin = (start: string, end: string) => isToday && start <= nowTime && nowTime < end;
-const roomsWithBookings = rooms.map((room) => ({
-  room,
-  bookings: bookingsForDate
-    .filter((b) => b.roomId === room.id)
-    .map((b) => {
-      const active = isNowWithin(b.startTime, b.endTime);
-      const minutesIn = minutesBetween(b.startTime, nowTime);
-      // Presence is plain text, never colour: the accent already means "now".
-      const presence = b.checkedInAt
-        ? `In the room since ${b.checkedInAt}`
-        : active
-          ? minutesIn >= NO_SHOW_GRACE_MINUTES
-            ? `Nobody has turned up — ${minutesIn} min in`
-            : "Not checked in yet"
-          : null;
-      return { ...b, active, presence, releasable: active && !b.checkedInAt && minutesIn >= NO_SHOW_GRACE_MINUTES };
-    }),
-}));
-
-// Passed to the client script below so a tab left open across a booking's
-// start/end minute — or across midnight, with no bookings left to wait for
-// today — reloads itself right then, instead of only when some other tab's
-// booking happens to trigger the SSE reload. A tab parked on *tomorrow*'s
-// view gets the same treatment for the one boundary that matters to it: the
-// moment real midnight arrives, this date stops being tomorrow and becomes
-// today, so its "(today)" label and live highlighting need to switch on —
-// any date further out has no near-term boundary worth waiting for.
-//
-// This is the real UTC instant of that boundary, not a minute count: a
-// minute count handed to the client's own setTimeout would assume a
-// wall-clock minute is always a real minute, which is false on the two
-// nights a year Canberra's clocks shift for daylight saving (see
-// canberraWallTimeToEpochMs in src/lib/clock.ts) — the client instead
-// computes its own delay as target-minus-now at load time.
-const nextBoundaryTarget = isToday
-  ? nextReloadTargetEpochMs(date, nowTime, bookingsForDate.flatMap((b) => [b.startTime, addMinutes(b.startTime, NO_SHOW_GRACE_MINUTES), b.endTime]))
-  : date === shiftDate(today, 1)
-    ? canberraWallTimeToEpochMs(date, "00:00")
-    : null;
+const now = canberraNow();
+// Counts come from the same helper as the room panel, so they agree.
+const markers = BUILDINGS.filter((b) => b.lngLat).map((b) => {
+  const dayBookings = listBookingsForBuilding(b.id, now.date);
+  return {
+    id: b.id,
+    name: b.name,
+    code: b.code,
+    lngLat: b.lngLat!,
+    image: b.image,
+    total: b.rooms.length,
+    available: b.rooms.filter((r) => roomLiveStatus(r, dayBookings, now.time).status === "available").length,
+  };
+});
 ---
 
-<!doctype html>
-<html lang="en-AU">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta
-      name="description"
-      content="A live board for ANU Library group study rooms — book a slot, see who's got a room right now, cancel one you don't need."
-    />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <title>Room board</title>
-  </head>
-  <body>
-    <nav aria-label="site">
-      <a href="/">Room board</a>
-      <a href="/readme/">About</a>
-    </nav>
-    <main>
-      <h1>Room board</h1>
-      <p>
-        A shared, live view of a handful of ANU Library group study rooms: who's booked what, and what's free — see
-        the <a href="/readme/">README</a> for what this prototype is standing in for.
-      </p>
+<Layout title="ANU Room Finder — Campus map" fullBleed>
+  <h1 class="visually-hidden">Find a study or tutorial room</h1>
+  <div class="campus-map-frame">
+    <div
+      id="campus-map"
+      class="campus-map"
+      role="region"
+      aria-label="Map of ANU campus with building markers"
+      data-markers={JSON.stringify(markers)}
+    >
+    </div>
+    <!-- Outside #campus-map so MapLibre never touches it; plain HTML, so it shows without JS. -->
+    <div class="map-overlay">
+      <p class="map-overlay-tagline">Pick a building to see free rooms</p>
+      <a href="#help">Help and all buildings</a>
+    </div>
+  </div>
 
-      <nav aria-label="date">
-        <a href={`/?date=${shiftDate(date, -1)}`}>&larr; {shiftDate(date, -1)}</a>
-        <strong>{date}{isToday ? " (today)" : ""}</strong>
-        <a href={`/?date=${shiftDate(date, 1)}`}>{shiftDate(date, 1)} &rarr;</a>
-      </nav>
-
-      {error && (
-        <p class="error" role="alert">
-          {errorMessages[error] ?? "Something went wrong — try again."}
-        </p>
-      )}
-
-      <div class="rooms">
-        {roomsWithBookings.map(({ room, bookings }) => (
-          <section class="room" aria-labelledby={`room-${room.id}`}>
-            <h2 id={`room-${room.id}`}>{room.name}</h2>
-            <ul>
-              {bookings.length === 0 && <li class="empty">Free all day</li>}
-              {bookings.map((booking) => (
-                <li class={booking.active ? "active" : undefined}>
-                  <span class="time">
-                    {booking.startTime}–{booking.endTime}
-                  </span>
-                  <span class="who">{booking.bookedBy}</span>
-                  {booking.presence && <span class="presence">{booking.presence}</span>}
-                  {booking.active && !booking.checkedInAt && (
-                    <form method="post" action={`/api/bookings/${booking.id}/checkin`}>
-                      <input type="hidden" name="date" value={date} />
-                      <button type="submit">I'm here</button>
-                    </form>
-                  )}
-                  {booking.releasable && (
-                    <form method="post" action={`/api/bookings/${booking.id}/release`}>
-                      <input type="hidden" name="date" value={date} />
-                      <button type="submit">Release — nobody's here</button>
-                    </form>
-                  )}
-                  <form method="post" action={`/api/bookings/${booking.id}/cancel`}>
-                    <input type="hidden" name="date" value={date} />
-                    <button type="submit">Cancel</button>
-                  </form>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-      </div>
-
-      <form method="post" action="/api/bookings" class="book-form">
-        <h2>Book a room</h2>
-        <input type="hidden" name="date" value={date} />
-        <div>
-          <label for="roomId">Room</label>
-          <select id="roomId" name="roomId" required>
-            {rooms.map((room) => (
-              <option value={room.id}>{room.name}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label for="bookedBy">Your name</label>
-          <input id="bookedBy" name="bookedBy" required maxlength="80" />
-        </div>
-        <div>
-          <label for="startTime">From</label>
-          <input id="startTime" name="startTime" type="time" required />
-        </div>
-        <div>
-          <label for="endTime">To</label>
-          <input id="endTime" name="endTime" type="time" required />
-        </div>
-        <button>Book {date}</button>
-      </form>
-    </main>
-    <script is:inline define:vars={{ date, nextBoundaryTarget }}>
-      // The board's live half: any tab looking at this same date reloads the
-      // moment a booking is made or cancelled anywhere, so two people looking
-      // at the same day never work from stale information. The form itself
-      // needs none of this — its own POST + redirect already re-renders from
-      // SQLite.
-      const source = new EventSource("/api/events");
-      source.addEventListener("booking", (event) => {
-        const payload = JSON.parse(event.data);
-        if (payload.date === date) location.reload();
-      });
-
-      // The SSE stream carries no state of its own, just a "something
-      // changed" signal — so a connection that drops (a network blip, a
-      // server restart on deploy) and reconnects has no way to know what it
-      // missed while it was down. "open" fires on every reconnect as well as
-      // the first connect; reload on every one after the first, since by
-      // then the only safe assumption is that something might have changed.
-      let hasOpenedBefore = false;
-      source.addEventListener("open", () => {
-        if (hasOpenedBefore) location.reload();
-        hasOpenedBefore = true;
-      });
-
-      // The other half of "live": the "happening now" highlight and the
-      // date-nav's "(today)" label are both computed once, at render time.
-      // With no other tab ever booking or cancelling anything today, this
-      // tab would otherwise keep showing that render's answer forever —
-      // past the end of a highlighted slot, past midnight into a day this
-      // render was never "today" for, or (on a tab left parked on tomorrow's
-      // view) past midnight into the moment that date becomes today and
-      // ought to switch its label and highlighting on. `nextBoundaryTarget`
-      // (the real UTC instant of the next booking start/end today, of
-      // midnight if nothing's left to wait for today, or of midnight if
-      // this view is tomorrow's date) is computed server-side, correctly
-      // across a Canberra daylight-saving transition — see
-      // canberraWallTimeToEpochMs in src/lib/clock.ts. The client just
-      // takes the delay from its own clock at load time, rather than
-      // trusting a minute count computed at render time to still equal the
-      // same number of real milliseconds by the time it fires.
-      if (nextBoundaryTarget !== null) {
-        setTimeout(() => location.reload(), Math.max(0, nextBoundaryTarget - Date.now()) + 5_000);
+  <section id="help" class="map-help" aria-labelledby="help-title">
+    <h2 id="help-title">Help</h2>
+    <p>
+      The map shows campus buildings with bookable study and tutorial rooms.
+      Hover or focus a building's marker to see its name and how many of its
+      rooms are free right now.
+    </p>
+    <p>
+      Click a marker to open the room availability panel. It lists every room
+      in that building: free rooms show how long they stay free, and booked
+      rooms show who has them and until when. Press Escape or the close button
+      to shut it.
+    </p>
+    <p>
+      To book, use <strong>Schedule booking</strong> at the bottom of the
+      panel. It opens the building's full booking page, where you pick a day,
+      a room and a time. {`Rooms can be booked from ${formatTime12(OPEN)} to ${formatTime12(CLOSE)}, up to two weeks ahead.`}
+    </p>
+    <p>Some buildings aren't on the map yet. Every building is listed here:</p>
+    <ul class="building-links">
+      {
+        BUILDINGS.map((b) => (
+          <li>
+            <a href={`/building/${b.id}/`} data-building-id={b.id} data-building-name={b.name}>{b.name}</a>
+          </li>
+        ))
       }
-    </script>
-  </body>
-</html>
+    </ul>
+  </section>
+
+  <RoomAvailabilityPanel />
+</Layout>
+
+<script>
+  import * as maplibregl from "maplibre-gl";
+  import "maplibre-gl/dist/maplibre-gl.css";
+  // Bundling moves MapLibre away from its sibling worker file, so hand it
+  // Vite's bundled worker URL explicitly.
+  import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+  import { Protocol } from "pmtiles";
+  import { campusStyle } from "../lib/map-style";
+
+  interface MarkerData {
+    id: string;
+    name: string;
+    code: string;
+    lngLat: [number, number];
+    image?: string;
+    total: number;
+    available: number;
+  }
+
+  const container = document.getElementById("campus-map");
+  if (container) {
+    const markers: MarkerData[] = JSON.parse(container.dataset.markers ?? "[]");
+
+    maplibregl.setWorkerUrl(workerUrl);
+    maplibregl.addProtocol("pmtiles", new Protocol().tile);
+
+    const map = new maplibregl.Map({
+      container,
+      style: campusStyle,
+      center: [149.1194, -35.2776],
+      zoom: 16.3,
+      minZoom: 15,
+      maxZoom: 18.5,
+      maxBounds: [
+        [149.106, -35.289],
+        [149.132, -35.268],
+      ],
+      attributionControl: { compact: true },
+      dragRotate: false,
+      pitchWithRotate: false,
+    });
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    map.touchZoomRotate.disableRotation();
+
+    const el = (tag: string, className: string, text?: string) => {
+      const node = document.createElement(tag);
+      node.className = className;
+      if (text) node.textContent = text;
+      return node;
+    };
+
+    const placed = markers.map((m) => {
+      const link = document.createElement("a");
+      link.className = "map-marker";
+      link.href = `/building/${m.id}/`;
+      link.dataset.buildingId = m.id;
+      link.dataset.buildingName = m.name;
+      link.setAttribute(
+        "aria-label",
+        `${m.name}, ${m.available} of ${m.total} rooms available. Click to see its rooms and book`,
+      );
+
+      const card = el("span", "marker-card");
+      card.setAttribute("aria-hidden", "true");
+      let image: HTMLElement;
+      if (m.image) {
+        const img = document.createElement("img");
+        img.className = "marker-card-image";
+        img.src = m.image;
+        img.alt = "";
+        image = img;
+      } else {
+        image = el("span", "marker-card-image");
+      }
+      card.append(
+        image,
+        el("span", "marker-card-name", m.name),
+        el("span", "marker-card-meta", `${m.available} of ${m.total} rooms available`),
+      );
+      link.append(el("span", "marker-pin"), card);
+
+      new maplibregl.Marker({ element: link, anchor: "bottom" }).setLngLat(m.lngLat).addTo(map);
+      return { link, lngLat: m.lngLat };
+    });
+
+    // Cards open upward; flip them below the pin near the top edge so the
+    // map's overflow clipping doesn't cut them off.
+    const flipCards = () => {
+      const limit = container.clientHeight / 3;
+      for (const p of placed) {
+        p.link.classList.toggle("card-below", map.project(p.lngLat).y < limit);
+      }
+    };
+    map.on("load", flipCards);
+    map.on("move", flipCards);
+  }
+</script>
