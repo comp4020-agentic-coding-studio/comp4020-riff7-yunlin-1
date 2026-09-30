@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
 import { desc } from "drizzle-orm";
@@ -13,26 +13,34 @@ import { type Message, messages } from "./schema";
 const path = process.env.DATABASE_PATH ?? "./.data/app.db";
 mkdirSync(dirname(path), { recursive: true });
 
-const client = new Database(path);
-client.pragma("journal_mode = WAL");
-
 // This riff swapped in a different prototype (a campus-wide room finder)
 // onto a volume that may already hold an earlier prototype's tables — a
 // Library room board whose `bookings` table used a different shape
 // (integer `room_id` FK, no `building_id`) and its own now-irrelevant
-// `rooms` table. A plain `migrate()` would try to CREATE TABLE `bookings`
-// against a table that already exists with the wrong columns and crash the
-// app at boot. Detect that one-time shape mismatch and drop the stale
-// tables first — this prototype owns none of that data, so nothing here is
-// worth preserving across the swap.
-const bookingsCols = client
-  .prepare(`SELECT name FROM pragma_table_info('bookings')`)
-  .all() as { name: string }[];
-const isPriorPrototypesBookings =
-  bookingsCols.length > 0 && !bookingsCols.some((c) => c.name === "building_id");
-if (isPriorPrototypesBookings) {
-  client.exec("DROP TABLE IF EXISTS bookings; DROP TABLE IF EXISTS rooms;");
+// `rooms` table. Opening that file as-is and issuing DDL against it (an
+// earlier version of this guard) still crashed in production even though it
+// reproduced fine locally — the WAL/SHM sidecar files from whatever state
+// the old app process left them in are also on this same path, and this
+// prototype has no way to know that state is safe to build on. Deleting the
+// database file and its sidecars outright, before ever opening a
+// connection, is the only version of this guard that starts the new schema
+// from a state this code actually created itself. This prototype owns none
+// of that old data, so nothing here is worth preserving across the swap.
+if (existsSync(path)) {
+  const probe = new Database(path, { readonly: true });
+  const bookingsCols = probe.prepare(`SELECT name FROM pragma_table_info('bookings')`).all() as {
+    name: string;
+  }[];
+  probe.close();
+  const isPriorPrototypesVolume =
+    bookingsCols.length > 0 && !bookingsCols.some((c) => c.name === "building_id");
+  if (isPriorPrototypesVolume) {
+    for (const suffix of ["", "-wal", "-shm", "-journal"]) rmSync(`${path}${suffix}`, { force: true });
+  }
 }
+
+const client = new Database(path);
+client.pragma("journal_mode = WAL");
 
 export const db = drizzle(client);
 
