@@ -96,3 +96,16 @@ export function nextReloadTargetEpochMs(date: string, nowTime: string, boundarie
   // never at 00:00 — so this never falls through to null.
   return canberraWallTimeToEpochMs(shiftDate(date, 1), "00:00")!;
 }
+
+// How long a booked slot may sit empty once it has started before anyone
+// standing outside is allowed to release it.
+export const NO_SHOW_GRACE_MINUTES = 10;
+
+export function minutesBetween(fromHhmm: string, toHhmm: string): number {
+  return toMinutes(toHhmm) - toMinutes(fromHhmm);
+}
+
+export function addMinutes(hhmm: string, n: number): string {
+  const t = Math.min(toMinutes(hhmm) + n, 24 * 60 - 1);
+  return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+}

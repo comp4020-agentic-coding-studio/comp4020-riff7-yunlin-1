@@ -159,3 +159,8 @@ nav[aria-label="date"] {
   color: var(--paper);
   cursor: pointer;
 }
+
+.room li .presence {
+  font-size: 0.9em;
+  font-style: italic;
+}

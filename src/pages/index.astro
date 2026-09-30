@@ -1,5 +1,5 @@
 ---
-import { canberraParts, canberraWallTimeToEpochMs, nextReloadTargetEpochMs, shiftDate } from "../lib/clock";
+import { NO_SHOW_GRACE_MINUTES, addMinutes, canberraParts, minutesBetween, canberraWallTimeToEpochMs, nextReloadTargetEpochMs, shiftDate } from "../lib/clock";
 import { listBookingsForDate, listRooms } from "../lib/db";
 import "../styles.css";
 
@@ -31,7 +31,19 @@ const roomsWithBookings = rooms.map((room) => ({
   room,
   bookings: bookingsForDate
     .filter((b) => b.roomId === room.id)
-    .map((b) => ({ ...b, active: isNowWithin(b.startTime, b.endTime) })),
+    .map((b) => {
+      const active = isNowWithin(b.startTime, b.endTime);
+      const minutesIn = minutesBetween(b.startTime, nowTime);
+      // Presence is plain text, never colour: the accent already means "now".
+      const presence = b.checkedInAt
+        ? `In the room since ${b.checkedInAt}`
+        : active
+          ? minutesIn >= NO_SHOW_GRACE_MINUTES
+            ? `Nobody has turned up — ${minutesIn} min in`
+            : "Not checked in yet"
+          : null;
+      return { ...b, active, presence, releasable: active && !b.checkedInAt && minutesIn >= NO_SHOW_GRACE_MINUTES };
+    }),
 }));
 
 // Passed to the client script below so a tab left open across a booking's
@@ -50,7 +62,7 @@ const roomsWithBookings = rooms.map((room) => ({
 // canberraWallTimeToEpochMs in src/lib/clock.ts) — the client instead
 // computes its own delay as target-minus-now at load time.
 const nextBoundaryTarget = isToday
-  ? nextReloadTargetEpochMs(date, nowTime, bookingsForDate.flatMap((b) => [b.startTime, b.endTime]))
+  ? nextReloadTargetEpochMs(date, nowTime, bookingsForDate.flatMap((b) => [b.startTime, addMinutes(b.startTime, NO_SHOW_GRACE_MINUTES), b.endTime]))
   : date === shiftDate(today, 1)
     ? canberraWallTimeToEpochMs(date, "00:00")
     : null;
@@ -104,6 +116,19 @@ const nextBoundaryTarget = isToday
                     {booking.startTime}–{booking.endTime}
                   </span>
                   <span class="who">{booking.bookedBy}</span>
+                  {booking.presence && <span class="presence">{booking.presence}</span>}
+                  {booking.active && !booking.checkedInAt && (
+                    <form method="post" action={`/api/bookings/${booking.id}/checkin`}>
+                      <input type="hidden" name="date" value={date} />
+                      <button type="submit">I'm here</button>
+                    </form>
+                  )}
+                  {booking.releasable && (
+                    <form method="post" action={`/api/bookings/${booking.id}/release`}>
+                      <input type="hidden" name="date" value={date} />
+                      <button type="submit">Release — nobody's here</button>
+                    </form>
+                  )}
                   <form method="post" action={`/api/bookings/${booking.id}/cancel`}>
                     <input type="hidden" name="date" value={date} />
                     <button type="submit">Cancel</button>

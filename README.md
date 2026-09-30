@@ -34,3 +34,11 @@ prototype with no real ANU identities to check), no room search across all of
 ANU (three seeded rooms are enough to show the mechanic), and no recurring
 bookings (a booking board that only ever books one slot at a time is honest
 about what it models --- a real timetable is a different, bigger system).
+
+## Riff: who actually turned up
+
+The board said what was booked, never whether anyone was in the room. A slot
+happening now can now be checked into ("I'm here"); if nobody has after
+10 minutes, the board says so in plain text and offers "Release" so someone
+standing outside can take it. Presence is words, not colour --- the one accent
+still means only "happening now". Enforced by `spec/presence.test.ts`.

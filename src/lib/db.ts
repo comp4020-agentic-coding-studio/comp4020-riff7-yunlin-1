@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { NO_SHOW_GRACE_MINUTES, minutesBetween } from "./clock";
 import { type Booking, type Room, bookings, rooms } from "./schema";
 
 // One SQLite file is the app's whole persistent state. In production
@@ -82,4 +83,29 @@ export function addBooking(candidate: NewBooking): Booking {
 export function cancelBooking(id: number): string | null {
   const removed = db.delete(bookings).where(eq(bookings.id, id)).returning().all();
   return removed[0]?.date ?? null;
+}
+
+function isHappeningNow(b: Booking, today: string, nowTime: string): boolean {
+  return b.date === today && b.startTime <= nowTime && nowTime < b.endTime;
+}
+
+/** Marks a booking that is happening right now as turned-up-to. Returns its date, or null if it isn't a live slot. */
+export function checkIn(id: number, today: string, nowTime: string): string | null {
+  const b = db.select().from(bookings).where(eq(bookings.id, id)).get();
+  if (!b || !isHappeningNow(b, today, nowTime)) return null;
+  if (!b.checkedInAt) db.update(bookings).set({ checkedInAt: nowTime }).where(eq(bookings.id, id)).run();
+  return b.date;
+}
+
+/**
+ * Frees a slot nobody turned up to: only allowed while it's happening now,
+ * still unchecked-in, and past the grace period. Returns its date, or null
+ * if any of that doesn't hold (nothing is deleted then).
+ */
+export function releaseNoShow(id: number, today: string, nowTime: string): string | null {
+  const b = db.select().from(bookings).where(eq(bookings.id, id)).get();
+  if (!b || b.checkedInAt || !isHappeningNow(b, today, nowTime)) return null;
+  if (minutesBetween(b.startTime, nowTime) < NO_SHOW_GRACE_MINUTES) return null;
+  db.delete(bookings).where(eq(bookings.id, id)).run();
+  return b.date;
 }
