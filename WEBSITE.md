@@ -37,7 +37,10 @@ Reusable components, `src/components/`:
 |---|---|---|
 | Layout | `Layout.astro` | Page shell: nav bar + `<main>`. Every page wraps in this. Prop `fullBleed` drops main's column so the home map runs edge to edge. |
 | RoomAvailabilityPanel | `RoomAvailabilityPanel.astro` | Home page side panel: one row per room from `/api/rooms.json` (status, `until`, `bookedBy` from `roomLiveStatus`), refetched on every open, with a Schedule booking link to the building page. |
-| AvailabilityCalendar | `AvailabilityCalendar.astro` | A building's day: 14-day strip, legend, room-by-slot table and the one booking form. Props: `building`, `date`, optional `selectedRoomId` / `selectedStart`, optional `booked` (`roomId`/`start`/`end` from the no-JS redirect's `?booked=&from=&to=`, shown as a success message only if the room is in this building). Works as plain links and a form POST; JS fills the form in place and books via fetch. |
+| BookingFilters | `BookingFilters.astro` | Top of a building page: Previous / Today / Tomorrow / Next day links, then one GET form (building, date, start, duration, people, "Only show free rooms"). Without JS it has a Find rooms button; with JS any change resubmits and focus returns to the changed field. |
+| RoomCard | `RoomCard.astro` | One room in the quick-booking list, from `roomOptions()` in `bookings.ts`: name, level and seats, one status line ("Available now until 10:00 PM", "Busy at 4:00 PM · next free 5:00–10:00 PM"), and a Book link for the time on offer. |
+| BookingDialog | `BookingDialog.astro` | The confirm step: building, room, date, time, capacity, your name and an optional later end. Rendered open by the page when `?room=&start=` names a free slot (the no-JS path, a plain POST); with JS, Book links and free schedule cells open it as a modal, it books via fetch and shows a success view, and Done reloads with `?booked=&from=&to=`. |
+| AvailabilityCalendar | `AvailabilityCalendar.astro` | The full day schedule, inside the collapsed "Full schedule" section: rooms by 30-minute slots, sticky room column and time header, the chosen window highlighted, and a Now marker today. Every free cell is a Book link. |
 
 Shared CSS classes, `src/styles.css`:
 
@@ -49,13 +52,17 @@ Shared CSS classes, `src/styles.css`:
 | `.map-help`, `.building-links` | Help section below the home map, and its plain text links to every building page |
 | `.map-marker`, `.marker-pin`, `.marker-card` | Building marker (a link to the building page), its pin, and the hover/focus card (image placeholder, name, rooms available) |
 | `.back-link` | "Back to campus map" link on a building page |
-| `.day-strip`, `.day-link`, `.day-step` | Day picker above the calendar; the current day (`aria-current="date"`) is filled gold |
-| `.calendar-legend`, `.legend-swatch` | Legend naming each slot state in text |
-| `.calendar-wrap`, `.calendar` | The day table and its wrapper; only the wrapper scrolls sideways, and the room column is sticky (narrower, with wrapping names, under 40rem) |
-| `.calendar-hint` | "Scroll sideways for later times" above the table, shown only under 40rem |
-| `.skip-link` | "Skip to booking form" link before the table, off-screen until focused; jumps to `#book-section` |
-| `.slot`, `.slot-free`, `.slot-booked`, `.slot-closed`, `.slot-past`, `.slot-selected` | Calendar cells: free is green with a gold outline on hover/focus/selected, booked is a red hatch, past mid grey, closed darker grey. The legend swatches reuse these classes |
-| `.booking-form`, `.booking-summary`, `.booking-feedback` | The booking form under the calendar and its success/error message (an always-present live region, `tabindex="-1"` so it takes focus after a JS booking; a 409 adds a "Reload this day" link) |
+| `.finder`, `.date-nav`, `.date-chip`, `.date-step`, `.finder-form`, `.finder-field`, `.finder-toggle` | The filter bar. The selected day chip (`aria-current="date"`) is filled gold |
+| `.results`, `.results-head`, `.results-count`, `.results-empty`, `.results-note` | The "Free now, 4:00–5:00 PM" answer and the notes under it |
+| `.room-cards`, `.room-card`, `.room-card-match` / `-later` / `-none` / `-closed` | Room cards. Free rooms get a green accent and shadow, the rest are flat grey |
+| `.book-button`, `.book-button-secondary` | The primary black action (Book, Confirm, Done), and the outline version for a later time |
+| `.book-dialog`, `.book-details`, `.book-field`, `.book-success` | The confirm dialog. Its spread shadow dims the page even when rendered open without JS |
+| `.schedule`, `.floorplan` | Collapsed `<details>` sections for the full schedule and the floor plan |
+| `.calendar-legend`, `.legend-swatch`, `.legend-window` | Legend naming each slot state in text, plus the chosen-time swatch |
+| `.calendar-wrap`, `.calendar` | The day table. The wrapper scrolls both ways; the room column and time header are sticky |
+| `.skip-link` | "Skip past the schedule" link before the table, off-screen until focused |
+| `.slot`, `.slot-free`, `.slot-booked`, `.slot-closed`, `.slot-past`, `.slot-window`, `.slot-now`, `.slot-head-window`, `.slot-head-now` | Calendar cells: free green, booked red hatch, past pale grey, closed dark grey. The chosen window has gold rules and deeper green; the current slot has a black left rule |
+| `.booking-feedback` | Success or error message (the page banner is an always-present `role="status"` region) |
 | `.visually-hidden` | Text for screen readers only (half-hour headers, cell states) |
 
 ## Data

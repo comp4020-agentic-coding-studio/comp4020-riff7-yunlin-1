@@ -1,0 +1,140 @@
+---
+// The "what do you need?" bar at the top of a building page: day links, then
+// one GET form for building, date, start, length, group size and the
+// free-only toggle.
+// No-JS baseline: day links are plain links and the form has a Find rooms
+// button. With JS: any change submits the form, and focus comes back to the
+// field that changed after the reload.
+import type { Building } from "../lib/campus";
+import { addDays } from "../lib/bookings";
+import { formatDuration, formatTime12 } from "../lib/time";
+
+interface Props {
+  building: Building;
+  buildings: Building[];
+  date: string;
+  first: string;
+  last: string;
+  today: string;
+  href: (over?: Record<string, string>) => string;
+  startChoices: string[];
+  start: string;
+  nowSlot?: string;
+  durations: number[];
+  duration: number;
+  capacities: number[];
+  capacity: number;
+  onlyAvailable: boolean;
+}
+
+const {
+  building,
+  buildings,
+  date,
+  first,
+  last,
+  today,
+  href,
+  startChoices,
+  start,
+  nowSlot,
+  durations,
+  duration,
+  capacities,
+  capacity,
+  onlyAvailable,
+} = Astro.props;
+
+const tomorrow = addDays(today, 1);
+const prevDay = date > first ? addDays(date, -1) : undefined;
+const nextDay = date < last ? addDays(date, 1) : undefined;
+const longDate = new Intl.DateTimeFormat("en-AU", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  timeZone: "UTC",
+}).format(new Date(`${date}T00:00:00Z`));
+---
+
+<section class="finder" aria-labelledby="finder-heading">
+  <h2 id="finder-heading" class="visually-hidden">Find a room</h2>
+
+  <nav class="date-nav" aria-label="Choose a day">
+    {prevDay ? (
+      <a class="date-step" href={href({ date: prevDay })} aria-label="Previous day">&larr;</a>
+    ) : (
+      <span class="date-step" aria-hidden="true">&larr;</span>
+    )}
+    <a class="date-chip" href={href({ date: today })} aria-current={date === today ? "date" : undefined}>Today</a>
+    <a class="date-chip" href={href({ date: tomorrow })} aria-current={date === tomorrow ? "date" : undefined}>Tomorrow</a>
+    {nextDay ? (
+      <a class="date-step" href={href({ date: nextDay })} aria-label="Next day">&rarr;</a>
+    ) : (
+      <span class="date-step" aria-hidden="true">&rarr;</span>
+    )}
+    <span class="date-current">{longDate}</span>
+  </nav>
+
+  <form class="finder-form" method="get" data-finder>
+    <label class="finder-field finder-building">
+      <span>Building</span>
+      <select name="building">
+        {buildings.map((b) => <option value={b.id} selected={b.id === building.id}>{b.name}</option>)}
+      </select>
+    </label>
+    <label class="finder-field">
+      <span>Date</span>
+      <input type="date" name="date" value={date} min={first} max={last} required />
+    </label>
+    <label class="finder-field">
+      <span>Start</span>
+      <select name="start">
+        {startChoices.map((s) => (
+          <option value={s} selected={s === start}>
+            {s === nowSlot ? `Now (${formatTime12(s)})` : formatTime12(s)}
+          </option>
+        ))}
+      </select>
+    </label>
+    <label class="finder-field">
+      <span>For</span>
+      <select name="duration">
+        {durations.map((d) => <option value={d} selected={d === duration}>{formatDuration(d)}</option>)}
+      </select>
+    </label>
+    <label class="finder-field">
+      <span>People</span>
+      <select name="capacity">
+        <option value="" selected={capacity === 0}>Any size</option>
+        {capacities.map((c) => <option value={c} selected={c === capacity}>{c}+ people</option>)}
+      </select>
+    </label>
+    <label class="finder-toggle">
+      <input type="checkbox" name="available" value="1" checked={onlyAvailable} />
+      <span>Only show free rooms</span>
+    </label>
+    <button type="submit" class="finder-submit">Find rooms</button>
+  </form>
+</section>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>("[data-finder]");
+  if (form) {
+    form.querySelector(".finder-submit")?.setAttribute("hidden", "");
+    form.addEventListener("change", (event) => {
+      const field = event.target as HTMLInputElement;
+      if (field.type === "date" && !field.checkValidity()) return;
+      try {
+        sessionStorage.setItem("finder-focus", field.name);
+      } catch {}
+      form.requestSubmit();
+    });
+    try {
+      const name = sessionStorage.getItem("finder-focus");
+      if (name) {
+        sessionStorage.removeItem("finder-focus");
+        (form.elements.namedItem(name) as HTMLElement | null)?.focus();
+      }
+    } catch {}
+  }
+</script>

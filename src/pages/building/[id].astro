@@ -1,8 +1,24 @@
 ---
 import Layout from "../../components/Layout.astro";
 import AvailabilityCalendar from "../../components/AvailabilityCalendar.astro";
-import { getBuilding } from "../../lib/campus";
-import { bookingWindow } from "../../lib/bookings";
+import BookingFilters from "../../components/BookingFilters.astro";
+import BookingDialog from "../../components/BookingDialog.astro";
+import RoomCard from "../../components/RoomCard.astro";
+import { BUILDINGS, CLOSE, OPEN, SLOT_MINUTES, getBuilding } from "../../lib/campus";
+import {
+  addDays,
+  bookingWindow,
+  buildingDayGrid,
+  canberraNow,
+  daySlots,
+  fromMinutes,
+  isSlotTime,
+  listBookingsForBuilding,
+  roomOptions,
+  toMinutes,
+  validEnds,
+} from "../../lib/bookings";
+import { formatDuration, formatRange12, formatTime12 } from "../../lib/time";
 
 const { id } = Astro.params;
 const building = getBuilding(id!);
@@ -11,37 +27,242 @@ if (!building) {
   return Astro.redirect("/");
 }
 
-// Keep ?date inside the booking window: a malformed date means today, one
-// outside the window is pulled to the nearest edge.
-const { first, last } = bookingWindow();
-const asked = Astro.url.searchParams.get("date") ?? "";
-let date = first;
-if (/^\d{4}-\d{2}-\d{2}$/.test(asked)) {
-  date = asked < first ? first : asked > last ? last : asked;
+const params = Astro.url.searchParams;
+
+// The filter bar's building picker submits ?building=; hop to that page and
+// keep every other filter.
+const switchTo = params.get("building");
+if (switchTo && switchTo !== building.id && getBuilding(switchTo)) {
+  const rest = new URLSearchParams(params);
+  rest.delete("building");
+  const query = rest.toString();
+  return Astro.redirect(`/building/${switchTo}/${query ? `?${query}` : ""}`);
 }
-// The calendar only uses room/start if they name a free cell in this grid.
-const room = Astro.url.searchParams.get("room") ?? undefined;
-const start = Astro.url.searchParams.get("start") ?? undefined;
-const error = Astro.url.searchParams.get("error");
-// Set by the no-JS form path after a booking succeeds; the calendar checks
-// the room and times before it says anything.
-const booked = {
-  roomId: Astro.url.searchParams.get("booked") ?? undefined,
-  start: Astro.url.searchParams.get("from") ?? undefined,
-  end: Astro.url.searchParams.get("to") ?? undefined,
+
+const DURATIONS = [30, 60, 90, 120, 180];
+const CAPACITIES = [4, 6, 10, 20, 30, 50];
+
+const now = canberraNow();
+const { first, last } = bookingWindow(now);
+const todayOver = now.time >= CLOSE;
+
+// Keep ?date inside the booking window: a malformed date means the first day
+// with bookable time left, one outside the window is pulled to the nearest edge.
+const askedDate = params.get("date") ?? "";
+let date = todayOver ? addDays(first, 1) : first;
+if (/^\d{4}-\d{2}-\d{2}$/.test(askedDate)) {
+  date = askedDate < first ? first : askedDate > last ? last : askedDate;
+}
+const isToday = date === now.date;
+
+// Start times still ahead on this day. Today, the slot in progress counts
+// (the same rule as the grid), so the first choice is "now".
+const startChoices = isToday
+  ? daySlots().filter((s) => fromMinutes(toMinutes(s) + SLOT_MINUTES) > now.time)
+  : daySlots();
+const askedStart = params.get("start") ?? "";
+const start = startChoices.includes(askedStart) ? askedStart : (startChoices[0] ?? OPEN);
+const nowSlot = isToday && now.time >= OPEN ? startChoices[0] : undefined;
+
+const askedDuration = Number(params.get("duration"));
+const duration = DURATIONS.includes(askedDuration) ? askedDuration : 60;
+const askedCapacity = Number(params.get("capacity"));
+const capacity = CAPACITIES.includes(askedCapacity) ? askedCapacity : 0;
+const onlyAvailable = params.get("available") === "1";
+const end = fromMinutes(Math.min(toMinutes(start) + duration, toMinutes(CLOSE)));
+
+// Every link on the page keeps the current filters; `over` swaps some out.
+const filters: Record<string, string> = {
+  date,
+  start,
+  duration: String(duration),
+  capacity: capacity ? String(capacity) : "",
+  available: onlyAvailable ? "1" : "",
 };
+const href = (over: Record<string, string> = {}) => {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries({ ...filters, ...over })) if (value) query.set(key, value);
+  return `?${query}`;
+};
+
+// Built from the date string in UTC, so the label can't drift a day either
+// way whatever timezone the server runs in.
+const dayFormat = new Intl.DateTimeFormat("en-AU", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  timeZone: "UTC",
+});
+const dayLabel = dayFormat.format(new Date(`${date}T00:00:00Z`));
+const dayWord = isToday ? "today" : date === addDays(now.date, 1) ? "tomorrow" : `on ${dayLabel}`;
+
+const bookings = listBookingsForBuilding(building.id, date);
+const grid = buildingDayGrid(building, date, bookings, now);
+const options = roomOptions(grid, start, duration);
+const fitting = options.filter((o) => o.room.capacity >= capacity);
+const hiddenBySize = options.length - fitting.length;
+const matches = fitting.filter((o) => o.kind === "match");
+const RANK = { match: 0, later: 1, none: 2, closed: 3 };
+const others = fitting.filter((o) => o.kind !== "match").sort((a, b) => RANK[a.kind] - RANK[b.kind]);
+
+const dayClosed = isToday && todayOver;
+const isNowStart = start === nowSlot;
+const range = formatRange12(start, end);
+const heading = dayClosed
+  ? "Booking hours are over for today"
+  : isNowStart
+    ? `Free now, ${range}`
+    : `Free ${dayWord}, ${range}`;
+
+const cardContext = { start, durationLabel: formatDuration(duration), dayWord, dayLabel, nowTime: isToday ? now.time : undefined };
+
+// A room plus start from the URL (a Book link followed without JS) opens the
+// confirm dialog, but only if that slot is still free.
+const selectedRow = grid.find((row) => row.room.id === params.get("room"));
+const selectedFree = selectedRow?.cells.some((cell) => cell.start === start && cell.state === "free");
+let selection;
+if (selectedRow && selectedFree) {
+  const ends = validEnds(
+    bookings.filter((b) => b.roomId === selectedRow.room.id),
+    start,
+  );
+  selection = { room: selectedRow.room, start, ends, end: ends.includes(end) ? end : ends[ends.length - 1] };
+}
+
+const error = params.get("error");
+// Set after a booking succeeds (the no-JS redirect, or the dialog's Done);
+// only confirmed for a room in this building with real slot times.
+const bookedRoom = building.rooms.find((r) => r.id === params.get("booked"));
+const bookedFrom = params.get("from") ?? "";
+const bookedTo = params.get("to") ?? "";
+const bookedMessage =
+  bookedRoom && isSlotTime(bookedFrom) && isSlotTime(bookedTo)
+    ? `Booked ${bookedRoom.name}, ${dayLabel}, ${formatRange12(bookedFrom, bookedTo)}.`
+    : "";
 ---
 
 <Layout title={`${building.name} — ANU Room Finder`}>
   <a class="back-link" href="/">&larr; Back to campus map</a>
-  <h1>{building.name}</h1>
-  <p class="card-meta">{building.code}</p>
+  <header class="building-header">
+    <h1>{building.name}</h1>
+    <p class="card-meta">{building.code} · {building.rooms.length} rooms</p>
+  </header>
 
-  {error && <div class="booking-feedback error">{error}</div>}
+  {error && <div class="booking-feedback error" role="alert">{error}</div>}
+  <div
+    class:list={["booking-feedback", { success: bookedMessage }]}
+    role="status"
+    aria-live="polite"
+    tabindex="-1"
+  >{bookedMessage}</div>
 
-  <AvailabilityCalendar building={building} date={date} selectedRoomId={room} selectedStart={start} booked={booked} />
+  <BookingFilters
+    building={building}
+    buildings={BUILDINGS}
+    date={date}
+    first={first}
+    last={last}
+    today={now.date}
+    href={href}
+    startChoices={startChoices}
+    start={start}
+    nowSlot={nowSlot}
+    durations={DURATIONS}
+    duration={duration}
+    capacities={CAPACITIES}
+    capacity={capacity}
+    onlyAvailable={onlyAvailable}
+  />
+
+  <section class="results" id="results" aria-labelledby="results-heading">
+    <div class="results-head">
+      <h2 id="results-heading">{heading}</h2>
+      {!dayClosed && (
+        <p class="results-count">
+          <strong>{matches.length}</strong> of {fitting.length} {fitting.length === 1 ? "room" : "rooms"} free
+          {capacity > 0 && ` for ${capacity}+ people`}
+        </p>
+      )}
+    </div>
+
+    {dayClosed ? (
+      <p class="results-empty">
+        Rooms close at {formatTime12(CLOSE)}. <a href={href({ date: addDays(date, 1), start: "" })}>See tomorrow's rooms</a>
+      </p>
+    ) : fitting.length === 0 ? (
+      <p class="results-empty">
+        No rooms in {building.name} seat {capacity} or more. <a href={href({ capacity: "" })}>Show all sizes</a>
+      </p>
+    ) : matches.length > 0 ? (
+      <ul class="room-cards">
+        {matches.map((option) => (
+          <RoomCard option={option} context={cardContext} bookHref={`${href({ start: option.offer!.start, room: option.room.id })}#book`} />
+        ))}
+      </ul>
+    ) : (
+      <p class="results-empty">
+        Nothing is free for the whole of {range}. Try a shorter booking or a later start
+        {others.some((o) => o.kind === "later") && ", or pick one of the next free times below"}.
+      </p>
+    )}
+
+    {!dayClosed && !onlyAvailable && others.length > 0 && (
+      <>
+        <h2 class="results-subhead">Busy at {formatTime12(start)}</h2>
+        <ul class="room-cards">
+          {others.map((option) => (
+            <RoomCard
+              option={option}
+              context={cardContext}
+              bookHref={option.offer ? `${href({ start: option.offer.start, room: option.room.id })}#book` : undefined}
+            />
+          ))}
+        </ul>
+      </>
+    )}
+
+    {onlyAvailable && others.length > 0 && (
+      <p class="results-note">
+        {others.length} busy {others.length === 1 ? "room" : "rooms"} hidden.{" "}<a href={href({ available: "" })}>Show all rooms</a>
+      </p>
+    )}
+    {hiddenBySize > 0 && fitting.length > 0 && (
+      <p class="results-note">
+        {hiddenBySize} {hiddenBySize === 1 ? "room" : "rooms"} under {capacity} seats hidden.{" "}
+        <a href={href({ capacity: "" })}>Show all sizes</a>
+      </p>
+    )}
+  </section>
+
+  <details class="schedule" open={params.get("schedule") === "1"}>
+    <summary>
+      <span class="schedule-title">Full schedule</span>
+      <span class="schedule-sub">Every room, {dayLabel}, {formatTime12(OPEN)} to {formatTime12(CLOSE)}</span>
+    </summary>
+    <AvailabilityCalendar
+      building={building}
+      grid={grid}
+      dayLabel={dayLabel}
+      windowStart={start}
+      windowEnd={end}
+      nowTime={isToday ? now.time : undefined}
+      hrefFor={(roomId: string, cellStart: string) => `${href({ start: cellStart, room: roomId, schedule: "1" })}#book`}
+    />
+  </details>
 
   {building.floorplan && (
-    <img class="building-floorplan" src={building.floorplan} alt={`${building.name} floor plan`} />
+    <details class="floorplan">
+      <summary><span class="schedule-title">Floor plan</span></summary>
+      <img class="building-floorplan" src={building.floorplan} alt={`${building.name} floor plan`} loading="lazy" />
+    </details>
   )}
+
+  <BookingDialog
+    building={building}
+    date={date}
+    dayLabel={dayLabel}
+    duration={duration}
+    selection={selection}
+    cancelHref={href()}
+  />
 </Layout>

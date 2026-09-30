@@ -1,0 +1,65 @@
+---
+// One room in the quick-booking list: name, floor and seats, one line saying
+// when it's free, and a Book button for the time on offer. The Book button is
+// a plain link (?room=&start=#book opens the confirm dialog without JS);
+// BookingDialog's script opens the dialog in place instead.
+import type { RoomOption } from "../lib/bookings";
+import { CLOSE, OPEN } from "../lib/campus";
+import { formatRange12, formatTime12 } from "../lib/time";
+
+interface Props {
+  option: RoomOption;
+  context: { start: string; durationLabel: string; dayWord: string; dayLabel: string; nowTime?: string };
+  bookHref?: string;
+}
+
+const { option, context, bookHref } = Astro.props;
+const { room, kind, offer, free } = option;
+
+const meta = [room.level, `${room.capacity} seats`].filter(Boolean).join(" · ");
+
+let status = "";
+if (kind === "match" && free) {
+  status =
+    context.nowTime && free.from <= context.nowTime
+      ? `Available now until ${formatTime12(free.until)}`
+      : free.from === OPEN && free.until === CLOSE
+        ? "Free all day"
+        : `Free ${formatRange12(free.from, free.until)}`;
+} else if (kind === "later" && free) {
+  status = `Busy at ${formatTime12(context.start)} · next free ${formatRange12(free.from, free.until)}`;
+} else if (kind === "none") {
+  status = `No ${context.durationLabel} gap left ${context.dayWord}`;
+} else {
+  status = "Not bookable";
+}
+
+const ICON = { match: "✓", later: "◷", none: "–", closed: "✕" };
+const range = offer ? formatRange12(offer.start, offer.end) : "";
+---
+
+<li
+  class:list={["room-card", `room-card-${kind}`]}
+  data-room-id={room.id}
+  data-room-name={room.name}
+  data-room-capacity={room.capacity}
+>
+  <div class="room-card-body">
+    <h3 class="room-card-name">{room.name}</h3>
+    <p class="room-card-meta">{meta}</p>
+    <p class="room-card-status">
+      <span class="room-card-icon" aria-hidden="true">{ICON[kind]}</span>{status}
+    </p>
+  </div>
+  {offer && bookHref && (
+    <a
+      class:list={["book-button", { "book-button-secondary": kind !== "match" }]}
+      href={bookHref}
+      data-book
+      data-start={offer.start}
+      data-end={offer.end}
+      data-ends={offer.ends.join(",")}
+      aria-label={`Book ${range}, ${room.name}, ${context.dayLabel}`}
+    >Book {range}</a>
+  )}
+</li>

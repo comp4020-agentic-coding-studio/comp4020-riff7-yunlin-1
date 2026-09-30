@@ -313,72 +313,498 @@ button:hover {
   padding-inline-start: 1.2rem;
 }
 
-/* Booking form: appears once a free slot is picked in the calendar. */
-.booking-form {
-  margin-top: 1rem;
-  padding: 0.75rem;
-  border: 1px solid var(--colour-border);
-  border-radius: var(--radius);
-  background: var(--colour-gold-tint);
+/* ---------- Building page: quick booking ---------- */
+
+.building-header h1 {
+  margin: 0;
+  line-height: 1.2;
+  color: var(--colour-black);
 }
 
-.booking-form[hidden] {
-  display: none;
+.building-header .card-meta {
+  margin: 0.2rem 0 1rem;
 }
 
-/* Inline feedback after a booking attempt. */
-.building-floorplan {
-  display: block;
-  width: 100%;
-  height: auto;
-  margin: 1.5rem auto 0;
-  border-radius: var(--radius);
-  border: 1px solid var(--colour-border, #ddd);
-}
-
+/* Page-level feedback: the success banner after a booking, or an error. */
 .booking-feedback {
-  margin-top: 0.6rem;
-  padding: 0.5rem 0.7rem;
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.8rem;
   border-radius: var(--radius);
-  font-size: 0.85rem;
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .booking-feedback.success {
   color: var(--colour-available);
   background: var(--colour-available-bg);
+  border-left: 4px solid var(--colour-available);
 }
 
 .booking-feedback.error {
   color: var(--colour-busy);
   background: var(--colour-busy-bg);
+  border-left: 4px solid var(--colour-busy);
 }
 
 /* The live region is always in the page so screen readers announce updates;
    collapse it while it has nothing to say. */
 .booking-feedback:empty {
-  margin: 0;
+  display: none;
+}
+
+.booking-feedback:focus {
+  outline: 3px solid var(--colour-gold);
+  outline-offset: 2px;
+}
+
+/* Filter bar: the gold-tint panel at the top of a building page. */
+.finder {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: var(--colour-gold-tint);
+  border: 1px solid var(--colour-border);
+  border-radius: calc(var(--radius) * 1.5);
+}
+
+.date-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+}
+
+.date-chip,
+.date-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.25rem;
+  padding: 0 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--colour-black);
+  background: var(--colour-white);
+  border: 1px solid var(--colour-border);
+  border-radius: 999px;
+}
+
+.date-step {
+  width: 2.25rem;
   padding: 0;
 }
 
-.booking-form label {
+span.date-step {
+  color: var(--colour-border);
+}
+
+.date-chip[aria-current="date"] {
+  background: var(--colour-gold);
+  border-color: var(--colour-gold);
+}
+
+a.date-chip:hover,
+a.date-step:hover {
+  color: var(--colour-black);
+  border-color: var(--colour-black);
+}
+
+.date-nav a:focus-visible,
+.finder-form :focus-visible,
+.book-dialog :focus-visible,
+.room-card a:focus-visible,
+.schedule summary:focus-visible,
+.floorplan summary:focus-visible {
+  outline: 3px solid var(--colour-gold);
+  outline-offset: 2px;
+}
+
+.date-current {
+  margin-left: 0.4rem;
+  font-weight: 600;
+  color: var(--colour-black);
+}
+
+.finder-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+  margin: 0;
+}
+
+.finder-field {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--colour-black);
 }
 
-.booking-form select {
+.finder-building {
+  grid-column: span 2;
+}
+
+.finder-field select,
+.finder-field input,
+.book-field select,
+.book-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.5rem;
   padding: 0.4rem 0.6rem;
   font: inherit;
+  font-size: 0.95rem;
+  font-weight: 400;
+  color: var(--colour-black);
+  background: var(--colour-white);
   border: 1px solid var(--colour-border);
   border-radius: var(--radius);
 }
 
-.booking-summary {
-  flex-basis: 100%;
+.finder-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.finder-toggle input {
+  flex: none;
+  min-width: 0;
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--colour-black);
+}
+
+.finder-submit {
+  min-height: 2.5rem;
+}
+
+.finder-submit[hidden] {
+  display: none;
+}
+
+/* Results: the answer to "what can I book?", first thing under the filters. */
+.results-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.results-head h2,
+.results-subhead {
+  margin: 0;
+  font-size: 1.35rem;
+  line-height: 1.3;
+  color: var(--colour-black);
+}
+
+.results-subhead {
+  margin: 1.75rem 0 0.75rem;
+  font-size: 1rem;
+  color: var(--colour-unigrey);
+}
+
+.results-count {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.results-count strong {
+  color: var(--colour-available);
+}
+
+.results-empty {
+  margin: 0;
+  padding: 1rem;
+  background: var(--colour-closed-bg);
+  border-radius: var(--radius);
+}
+
+.results-note {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+}
+
+.room-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.room-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  background: var(--colour-white);
+  border: 1px solid var(--colour-border);
+  border-left: 5px solid var(--colour-available);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+.room-card-later,
+.room-card-none,
+.room-card-closed {
+  box-shadow: none;
+  background: #fafafa;
+  border-left-color: var(--colour-closed);
+}
+
+.room-card-name {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.3;
+  color: var(--colour-black);
+}
+
+.room-card-meta {
+  margin: 0.1rem 0 0.35rem;
+  font-size: 0.85rem;
+}
+
+.room-card-status {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--colour-available);
+}
+
+.room-card-later .room-card-status,
+.room-card-none .room-card-status,
+.room-card-closed .room-card-status {
+  color: var(--colour-unigrey);
+}
+
+.room-card-icon {
+  flex: none;
+  width: 1rem;
+  text-align: center;
+}
+
+/* Primary action everywhere on the booking flow: black, gold on hover. */
+.book-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.6rem;
+  padding: 0.5rem 1.1rem;
+  font: inherit;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  color: var(--colour-white);
+  background: var(--colour-black);
+  border: 2px solid var(--colour-black);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.book-button:hover {
+  color: var(--colour-black);
+  background: var(--colour-gold);
+  border-color: var(--colour-gold);
+}
+
+.book-button-secondary {
+  color: var(--colour-black);
+  background: var(--colour-white);
+}
+
+.book-button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* Secondary sections: full schedule and floor plan, collapsed by default. */
+.schedule,
+.floorplan {
+  margin-top: 2rem;
+  border: 1px solid var(--colour-border);
+  border-radius: var(--radius);
+}
+
+.floorplan {
+  margin-top: 0.75rem;
+}
+
+.schedule summary,
+.floorplan summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.75rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+}
+
+.schedule-title {
+  font-weight: 700;
+  color: var(--colour-black);
+}
+
+.schedule-sub {
+  font-size: 0.85rem;
+}
+
+.schedule-body {
+  padding: 0 1rem 1rem;
+}
+
+.building-floorplan {
+  display: block;
+  width: calc(100% - 2rem);
+  height: auto;
+  margin: 0 1rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--colour-border);
+}
+
+/* Confirm dialog. The spread shadow dims the page even when it's rendered
+   open without JS, where there's no ::backdrop. */
+.book-dialog {
+  width: min(26rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  padding: 1.25rem;
+  overflow-y: auto;
+  color: var(--colour-unigrey);
+  background: var(--colour-white);
+  border: none;
+  border-top: 4px solid var(--colour-gold);
+  border-radius: calc(var(--radius) * 1.5);
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45), 0 12px 32px rgba(0, 0, 0, 0.3);
+}
+
+.book-dialog[open]:not(:modal) {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  margin: auto;
+  height: fit-content;
+}
+
+.book-dialog::backdrop {
+  background: transparent;
+}
+
+.book-kicker {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--colour-gold);
+}
+
+.book-title {
+  margin: 0 0 0.75rem;
+  font-size: 1.3rem;
+  line-height: 1.3;
+  color: var(--colour-black);
+}
+
+.booking-form {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.book-details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.3rem 1rem;
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  background: var(--colour-gold-tint);
+  border-radius: var(--radius);
+}
+
+.book-details div {
+  display: contents;
+}
+
+.book-details dt {
+  font-size: 0.85rem;
+}
+
+.book-details dd {
   margin: 0;
   font-weight: 600;
   color: var(--colour-black);
+}
+
+.book-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--colour-black);
+}
+
+.booking-form .booking-feedback {
+  margin: 0;
+}
+
+.book-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 1rem;
+}
+
+.book-cancel {
+  font-weight: 600;
+}
+
+.book-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.book-success[hidden],
+.book-confirm[hidden] {
+  display: none;
+}
+
+.book-success:focus {
+  outline: none;
+}
+
+.book-success-icon {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--colour-white);
+  background: var(--colour-available);
+  border-radius: 50%;
+}
+
+.book-success-text {
+  margin: 0 0 1rem;
 }
 
 /* Text only screen readers get: half-hour column headers, cell states. */
@@ -394,55 +820,15 @@ button:hover {
   border: 0;
 }
 
-/* Day strip: 14 day links plus previous/next. Wraps so it never widens the
-   page; the selected day is the one place gold fills a control. */
-.day-strip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin-block: 1rem;
-  font-size: 0.85rem;
-}
-
-.day-strip ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.day-link {
-  display: inline-block;
-  padding: 0.2rem 0.5rem;
-  border: 1px solid var(--colour-border);
-  border-radius: var(--radius);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.day-link[aria-current="date"] {
-  background: var(--colour-gold);
-  border-color: var(--colour-gold);
-  color: var(--colour-black);
-  font-weight: 600;
-}
-
-.day-step {
-  white-space: nowrap;
-}
-
 /* Legend: every state is named in text, never colour alone. */
 .calendar-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: 0.4rem 1rem;
   margin: 0 0 0.75rem;
   padding: 0;
   list-style: none;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
 
 .calendar-legend li {
@@ -458,12 +844,18 @@ button:hover {
   border: 1px solid var(--colour-border);
 }
 
-/* Day grid: rooms down, 30-minute slots across. Only the wrapper scrolls
-   sideways; the room column stays put while it does. */
+.legend-window {
+  background: var(--colour-gold-tint);
+  border: 2px solid var(--colour-gold);
+}
+
+/* Day grid: rooms down, 30-minute slots across. The wrapper scrolls both
+   ways, with the room column and the time header stuck in place. */
 .calendar-wrap {
   position: relative;
   max-width: 100%;
-  overflow-x: auto;
+  max-height: min(70vh, 36rem);
+  overflow: auto;
   border: 1px solid var(--colour-border);
   border-radius: var(--radius);
 }
@@ -474,11 +866,12 @@ button:hover {
   font-size: 0.8rem;
 }
 
-.calendar caption {
-  padding: 0.5rem;
-  text-align: left;
-  font-weight: 600;
-  color: var(--colour-black);
+.calendar thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--colour-white);
+  border-bottom: 1px solid var(--colour-border);
 }
 
 .calendar th[scope="row"],
@@ -491,6 +884,10 @@ button:hover {
   text-align: left;
   background: var(--colour-white);
   border-right: 1px solid var(--colour-border);
+}
+
+.calendar thead th:first-child {
+  z-index: 3;
 }
 
 .room-name {
@@ -509,19 +906,39 @@ button:hover {
 /* Hour labels sit over the hour's first column and spill into the
    half-hour column beside it. */
 .slot-head {
-  position: relative;
   width: 2rem;
   min-width: 2rem;
-  height: 1.6rem;
+  height: 2.2rem;
   padding: 0;
+  vertical-align: bottom;
 }
 
 .slot-hour {
   position: absolute;
-  left: 0.15rem;
-  bottom: 0.2rem;
+  left: 0.2rem;
+  bottom: 0.25rem;
   font-weight: 400;
   white-space: nowrap;
+}
+
+.calendar thead .slot-head-window {
+  background: var(--colour-gold-tint);
+  border-bottom: 3px solid var(--colour-gold);
+}
+
+.slot-head-window .slot-hour {
+  font-weight: 700;
+  color: var(--colour-black);
+}
+
+.slot-now-label {
+  position: absolute;
+  top: 0.1rem;
+  left: 0.2rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--colour-black);
 }
 
 .slot {
@@ -534,7 +951,7 @@ button:hover {
 }
 
 .slot-free {
-  background: var(--colour-available-bg);
+  background: #cfe6d6;
 }
 
 .slot-free a {
@@ -544,15 +961,14 @@ button:hover {
 }
 
 .slot-free a:hover,
-.slot-free a:focus-visible,
-.slot-selected a {
-  outline: 3px solid var(--colour-gold);
+.slot-free a:focus-visible {
+  outline: 3px solid var(--colour-black);
   outline-offset: -3px;
 }
 
 /* The four cell states have to read apart at a glance (and in the legend,
-   which reuses these classes): free is pale green, booked a red hatch, past
-   a flat mid grey, closed a darker grey. */
+   which reuses these classes): free is green, booked a red hatch, past a
+   pale grey, closed a darker grey. */
 .slot-booked {
   background: repeating-linear-gradient(
       135deg,
@@ -567,14 +983,22 @@ button:hover {
 }
 
 .slot-past {
-  background: var(--colour-past-bg);
+  background: #eeeeee;
 }
 
-/* Only shown on narrow screens, where most of the day is off to the right. */
-.calendar-hint {
-  display: none;
-  margin: 0 0 0.35rem;
-  font-size: 0.75rem;
+/* The chosen window: gold rules above and below, free cells a deeper green. */
+.slot-window {
+  box-shadow: inset 0 2px 0 var(--colour-gold), inset 0 -2px 0 var(--colour-gold);
+}
+
+.slot-free.slot-window {
+  background: #9fd0ae;
+}
+
+/* Current time: a black rule down the current slot's left edge. */
+.slot-now,
+.calendar thead .slot-head-now {
+  border-left: 2px solid var(--colour-black);
 }
 
 /* Every free cell is a tab stop, so keyboard users get a way past the grid.
@@ -596,8 +1020,39 @@ button:hover {
 }
 
 @media (max-width: 40rem) {
-  .calendar-hint {
-    display: block;
+  main {
+    padding: 1rem;
+  }
+
+  .finder {
+    padding: 0.75rem;
+  }
+
+  .finder-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .finder-toggle,
+  .finder-submit {
+    grid-column: span 2;
+  }
+
+  .date-current {
+    flex-basis: 100%;
+    margin: 0.2rem 0 0;
+  }
+
+  .room-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .book-button {
+    width: 100%;
+  }
+
+  .book-actions .book-button {
+    width: auto;
+    flex: 1;
   }
 
   /* A narrower room column leaves more of the day on screen. */

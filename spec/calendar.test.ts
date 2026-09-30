@@ -1,14 +1,15 @@
 import { JSDOM } from "jsdom";
 import { describe, expect, inject, it } from "vitest";
 
-// The building page's day calendar, checked over HTTP against the running
-// app. It claims: each library building lists its real rooms, one table row
-// per room; a booking made through the API shows up as booked cells with no
-// book link, while the slots either side stay bookable; picking a free cell
-// renders the booking form filled in, with end times that stop at the room's
-// next booking; and the day strip offers exactly the 14 bookable days, with
-// a date outside that window pulled back into it. A red run here means the
-// calendar is showing students the wrong picture of a day.
+// The building page, checked over HTTP against the running app. It claims:
+// each library building lists its real rooms, as schedule rows and as room
+// cards; a booking made through the API shows up as booked cells with no book
+// link, while the slots either side stay bookable; the room cards answer
+// "what can I book at this time?" (a booked room drops out of the free list
+// and offers its next gap instead); picking a room opens the confirm dialog
+// filled in, with end times that stop at the room's next booking; and the
+// date is always held inside the 14 bookable days. A red run here means the
+// page is showing students the wrong picture of a day.
 const baseUrl = inject("baseUrl");
 
 // Canberra wall-clock date, the same clock the page and API judge by.
@@ -80,12 +81,48 @@ describe("availability calendar", () => {
     for (const start of ["09:30", "11:00"]) {
       const td = cell(doc, ROOM, start);
       expect(td.classList.contains("slot-free")).toBe(true);
-      expect(td.querySelector("a")?.getAttribute("href")).toContain(`room=${ROOM}&start=${start}`);
+      const href = new URLSearchParams(td.querySelector("a")?.getAttribute("href")?.split("#")[0]);
+      expect(href.get("room")).toBe(ROOM);
+      expect(href.get("start")).toBe(start);
     }
+  });
+
+  it("lists free rooms as cards with a Book button, and offers a booked room's next gap", async () => {
+    const doc = await load(`/building/${BUILDING}/?date=${DATE}&start=10:00&duration=60`);
+    const card = (roomId: string) => doc.querySelector(`.room-card[data-room-id="${roomId}"]`);
+    expect(doc.querySelectorAll(".room-card")).toHaveLength(10);
+
+    const free = card("chifley-3-06");
+    expect(free?.classList.contains("room-card-match")).toBe(true);
+    const book = free?.querySelector<HTMLAnchorElement>("a[data-book]");
+    expect(book?.textContent).toBe("Book 10:00–11:00 AM");
+    expect(book?.dataset.start).toBe("10:00");
+    expect(book?.dataset.end).toBe("11:00");
+
+    const busy = card(ROOM);
+    expect(busy?.classList.contains("room-card-later")).toBe(true);
+    expect(busy?.querySelector("a[data-book]")?.textContent).toBe("Book 11:00 AM–12:00 PM");
+
+    const onlyFree = await load(`/building/${BUILDING}/?date=${DATE}&start=10:00&duration=60&available=1`);
+    expect(onlyFree.querySelector(`.room-card[data-room-id="${ROOM}"]`)).toBeNull();
+    expect(onlyFree.querySelectorAll(".room-card-match")).toHaveLength(9);
+  });
+
+  it("hides rooms too small for the group", async () => {
+    const none = await load(`/building/marie-reay/?date=${DATE}&capacity=50`);
+    expect(none.querySelectorAll(".room-card")).toHaveLength(0);
+    expect(none.querySelector(".results-empty")?.textContent).toMatch(/No rooms .* seat 50 or more/);
+
+    const some = await load(`/building/coombs/?date=${DATE}&capacity=20`);
+    expect(some.querySelectorAll(".room-card")).toHaveLength(2);
+    const birch = await load(`/building/birch/?date=${DATE}&capacity=30`);
+    expect(birch.querySelectorAll(".room-card")).toHaveLength(1);
+    expect(birch.querySelector(".results-note")?.textContent).toMatch(/1 room under 30 seats hidden/);
   });
 
   it("prefills the form from a picked cell, with end times up to the next booking", async () => {
     const doc = await load(`/building/${BUILDING}/?date=${DATE}&room=${ROOM}&start=09:00`);
+    expect(doc.querySelector("dialog#book-dialog")?.hasAttribute("open")).toBe(true);
     const form = doc.querySelector<HTMLFormElement>("form#book");
     expect(form, "expected the booking form").not.toBeNull();
     expect(form!.hasAttribute("hidden")).toBe(false);
@@ -101,24 +138,23 @@ describe("availability calendar", () => {
     const doc = await load(`/building/${BUILDING}/?date=${DATE}&booked=${ROOM}&from=10:00&to=11:00`);
     const feedback = doc.querySelector(".booking-feedback[role=status]");
     expect(feedback?.classList.contains("success")).toBe(true);
-    expect(feedback?.textContent).toMatch(/Booked .*3\.05.*10:00–11:00/);
+    expect(feedback?.textContent).toMatch(/Booked .*3\.05.*10:00–11:00 AM/);
 
     const other = await load(`/building/${BUILDING}/?date=${DATE}&booked=hancock-3-27&from=10:00&to=11:00`);
     expect(other.querySelector(".booking-feedback[role=status]")?.textContent).toBe("");
   });
 
-  it("offers the 14 bookable days and clamps a date outside them", async () => {
-    const doc = await load(`/building/${BUILDING}/`);
-    const days = Array.from(doc.querySelectorAll(".day-strip .day-link")).map((a) => a.getAttribute("href"));
-    expect(days).toHaveLength(14);
-    expect(days[0]).toBe(`?date=${TODAY}`);
-    expect(days[13]).toBe(`?date=${addDays(TODAY, 13)}`);
-
-    const clamped = await load(`/building/${BUILDING}/?date=2000-01-01`);
-    expect(clamped.querySelector(".day-link[aria-current=date]")?.getAttribute("href")).toBe(`?date=${TODAY}`);
-    const far = await load(`/building/${BUILDING}/?date=2099-01-01`);
-    expect(far.querySelector(".day-link[aria-current=date]")?.getAttribute("href")).toBe(
-      `?date=${addDays(TODAY, 13)}`,
+  it("keeps the date inside the 14 bookable days", async () => {
+    const dateInput = (doc: Document) => doc.querySelector<HTMLInputElement>(".finder input[name=date]");
+    const doc = await load(`/building/${BUILDING}/?date=${DATE}`);
+    expect(dateInput(doc)?.value).toBe(DATE);
+    expect(dateInput(doc)?.getAttribute("min")).toBe(TODAY);
+    expect(dateInput(doc)?.getAttribute("max")).toBe(addDays(TODAY, 13));
+    expect(new URLSearchParams(doc.querySelector(".date-nav a[aria-label='Next day']")?.getAttribute("href") ?? "").get("date")).toBe(
+      addDays(DATE, 1),
     );
+
+    expect(dateInput(await load(`/building/${BUILDING}/?date=2000-01-01`))?.value).toBe(TODAY);
+    expect(dateInput(await load(`/building/${BUILDING}/?date=2099-01-01`))?.value).toBe(addDays(TODAY, 13));
   });
 });

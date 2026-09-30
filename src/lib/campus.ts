@@ -11,6 +11,8 @@ export interface Room {
   capacity: number;
   status: RoomStatus;
   note: string;
+  // "Level 3"; only set where the room number tells us the floor.
+  level?: string;
 }
 
 export interface Building {
@@ -45,6 +47,7 @@ function numberedRooms(prefix: string, label: string, capacity: number, numbers:
     capacity,
     status: "available",
     note: `Level ${n.split(".")[0]}`,
+    level: `Level ${n.split(".")[0]}`,
   }));
 }
 

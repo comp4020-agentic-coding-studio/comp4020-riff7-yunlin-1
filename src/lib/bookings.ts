@@ -198,6 +198,54 @@ export function buildingDayGrid(
   });
 }
 
+export type RoomOptionKind = "match" | "later" | "none" | "closed";
+
+export interface RoomOption {
+  room: Room;
+  // match: free for the whole asked-for window. later: busy then, but a gap
+  // that long opens further into the day. none: no such gap left. closed: not
+  // bookable at all.
+  kind: RoomOptionKind;
+  // What the Book button offers, plus every end the free run allows.
+  offer?: { start: string; end: string; ends: string[] };
+  // The whole free run the offer sits in.
+  free?: { from: string; until: string };
+}
+
+// The quick-booking view of a day grid: for each room, can it be booked from
+// `start` for `minutes`, and if not, what's the next gap that long? A window
+// running past closing is cut back to closing. Pure over the grid.
+export function roomOptions(grid: GridRow[], start: string, minutes: number): RoomOption[] {
+  return grid.map(({ room, cells }): RoomOption => {
+    if (room.status === "closed") return { room, kind: "closed" };
+    const from = cells.findIndex((c) => c.start === start);
+    if (from < 0) return { room, kind: "none" };
+    const need = Math.min(Math.max(1, Math.round(minutes / SLOT_MINUTES)), cells.length - from);
+    const free = (i: number) => cells[i]?.state === "free";
+
+    for (let i = from; i + need <= cells.length; i++) {
+      let fits = true;
+      for (let j = i; j < i + need && fits; j++) fits = free(j);
+      if (!fits) continue;
+      let lo = i;
+      while (free(lo - 1)) lo--;
+      let hi = i + need - 1;
+      while (free(hi + 1)) hi++;
+      return {
+        room,
+        kind: i === from ? "match" : "later",
+        offer: {
+          start: cells[i].start,
+          end: cells[i + need - 1].end,
+          ends: cells.slice(i, hi + 1).map((c) => c.end),
+        },
+        free: { from: cells[lo].start, until: cells[hi].end },
+      };
+    }
+    return { room, kind: "none" };
+  });
+}
+
 // End-time choices for a booking starting at `start`: start+30, start+60, ...
 // up to and including the room's next booking start or closing time. Empty if
 // `start` itself is already booked.

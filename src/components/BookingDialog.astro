@@ -1,0 +1,231 @@
+---
+// The confirm step: what you're booking (building, room, date, time, seats),
+// your name, an optional later end, and one Confirm button.
+// No-JS baseline: a Book link reloads with ?room=&start=, and the page renders
+// this dialog already open with a plain POST form and a Cancel link.
+// With JS: Book links and free schedule cells open it as a modal in place,
+// the form submits via fetch, and a success view replaces the form. Done
+// reloads the page with the booking confirmed so every card is current.
+import type { Building, Room } from "../lib/campus";
+import { formatRange12, formatTime12 } from "../lib/time";
+
+interface Props {
+  building: Building;
+  date: string;
+  dayLabel: string;
+  duration: number;
+  selection?: { room: Room; start: string; ends: string[]; end: string };
+  cancelHref: string;
+}
+
+const { building, date, dayLabel, duration, selection, cancelHref } = Astro.props;
+---
+
+<dialog
+  id="book-dialog"
+  class="book-dialog"
+  aria-labelledby="book-title"
+  open={!!selection}
+  data-duration={duration}
+  data-day-label={dayLabel}
+  data-cancel-href={cancelHref}
+>
+  <div class="book-confirm">
+    <p class="book-kicker">Confirm booking</p>
+    <h2 id="book-title" class="book-title">{selection?.room.name ?? "Book a room"}</h2>
+
+    <form id="book" class="booking-form" method="POST" action="/api/bookings">
+      <input type="hidden" name="roomId" value={selection?.room.id ?? ""} />
+      <input type="hidden" name="buildingId" value={building.id} />
+      <input type="hidden" name="date" value={date} />
+      <input type="hidden" name="start" value={selection?.start ?? ""} />
+
+      <dl class="book-details">
+        <div><dt>Building</dt><dd>{building.name}</dd></div>
+        <div><dt>Room</dt><dd data-field="room">{selection?.room.name}</dd></div>
+        <div><dt>Date</dt><dd>{dayLabel}</dd></div>
+        <div><dt>Time</dt><dd data-field="time">{selection && formatRange12(selection.start, selection.end)}</dd></div>
+        <div><dt>Capacity</dt><dd data-field="capacity">{selection && `${selection.room.capacity} people`}</dd></div>
+      </dl>
+
+      <label class="book-field">
+        <span>Your name</span>
+        <input type="text" name="bookedBy" autocomplete="name" required />
+      </label>
+      <label class="book-field">
+        <span>Until</span>
+        <select name="end" required>
+          {selection?.ends.map((end) => (
+            <option value={end} selected={end === selection.end}>{formatTime12(end)}</option>
+          ))}
+        </select>
+      </label>
+
+      <p class="booking-feedback" role="alert"></p>
+
+      <div class="book-actions">
+        <a class="book-cancel" href={cancelHref} data-close>Cancel</a>
+        <button type="submit" class="book-button">Confirm booking</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="book-success" tabindex="-1" hidden>
+    <span class="book-success-icon" aria-hidden="true">✓</span>
+    <h2 id="book-success-title" class="book-title">You're booked</h2>
+    <p class="book-success-text"></p>
+    <a class="book-button" href={cancelHref} data-done>Done</a>
+  </div>
+</dialog>
+
+<script>
+  import { formatRange12, formatTime12 } from "../lib/time";
+
+  const dialog = document.querySelector<HTMLDialogElement>("#book-dialog");
+  if (dialog) {
+    const form = dialog.querySelector<HTMLFormElement>("#book")!;
+    const confirmView = dialog.querySelector<HTMLElement>(".book-confirm")!;
+    const successView = dialog.querySelector<HTMLElement>(".book-success")!;
+    const successText = successView.querySelector<HTMLElement>(".book-success-text")!;
+    const done = successView.querySelector<HTMLAnchorElement>("[data-done]")!;
+    const title = dialog.querySelector<HTMLElement>("#book-title")!;
+    const feedback = form.querySelector<HTMLElement>(".booking-feedback")!;
+    const submit = form.querySelector<HTMLButtonElement>("button[type=submit]")!;
+    const endSelect = form.elements.namedItem("end") as HTMLSelectElement;
+    const input = (name: string) => form.elements.namedItem(name) as HTMLInputElement;
+    const text = (name: string) => dialog.querySelector<HTMLElement>(`[data-field="${name}"]`)!;
+    const duration = Number(dialog.dataset.duration) || 60;
+    const dayLabel = dialog.dataset.dayLabel ?? "";
+    const cancelHref = dialog.dataset.cancelHref ?? location.search;
+
+    let trigger: HTMLElement | null = null;
+    let successHref: string | null = null;
+
+    const addMinutes = (time: string, minutes: number) => {
+      const [h, m] = time.split(":").map(Number);
+      const total = h * 60 + m + minutes;
+      return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+    };
+
+    const showTime = () => {
+      text("time").textContent = formatRange12(input("start").value, endSelect.value);
+    };
+
+    const open = (room: HTMLElement, start: string, ends: string[], end: string) => {
+      input("roomId").value = room.dataset.roomId!;
+      input("start").value = start;
+      title.textContent = room.dataset.roomName ?? "";
+      text("room").textContent = room.dataset.roomName ?? "";
+      text("capacity").textContent = `${room.dataset.roomCapacity} people`;
+      endSelect.replaceChildren(...ends.map((e) => new Option(formatTime12(e), e, e === end, e === end)));
+      showTime();
+      feedback.textContent = "";
+      feedback.className = "booking-feedback";
+      confirmView.hidden = false;
+      successView.hidden = true;
+      dialog.setAttribute("aria-labelledby", "book-title");
+      if (!dialog.open) dialog.showModal();
+      input("bookedBy").focus();
+    };
+
+    // A free schedule cell can run on until the next non-free cell, the same
+    // rule as validEnds() on the server.
+    const cellEnds = (cell: HTMLTableCellElement) => {
+      const cells = Array.from(cell.closest("tr")!.querySelectorAll<HTMLTableCellElement>("td[data-start]"));
+      const ends: string[] = [];
+      for (const c of cells.slice(cells.indexOf(cell))) {
+        if (!c.classList.contains("slot-free")) break;
+        ends.push(c.dataset.end!);
+      }
+      return ends;
+    };
+
+    document.addEventListener("click", (event) => {
+      const link = (event.target as Element).closest<HTMLAnchorElement>("a[data-book]");
+      if (!link) return;
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const room = link.closest<HTMLElement>("[data-room-id]");
+      if (!room) return;
+      event.preventDefault();
+      trigger = link;
+      const cell = link.closest("td");
+      if (cell) {
+        const start = cell.dataset.start!;
+        const ends = cellEnds(cell);
+        const wanted = addMinutes(start, duration);
+        open(room, start, ends, ends.includes(wanted) ? wanted : ends[ends.length - 1]);
+      } else {
+        open(room, link.dataset.start!, link.dataset.ends!.split(","), link.dataset.end!);
+      }
+    });
+
+    endSelect.addEventListener("change", showTime);
+
+    dialog.querySelector("[data-close]")!.addEventListener("click", (event) => {
+      event.preventDefault();
+      dialog.close();
+    });
+
+    dialog.addEventListener("close", () => {
+      // Reopened as a modal straight after load (see below): not a real close.
+      if (dialog.open) return;
+      if (successHref) {
+        location.assign(successHref);
+        return;
+      }
+      if (new URLSearchParams(location.search).has("room")) history.replaceState(null, "", cancelHref);
+      trigger?.focus();
+      trigger = null;
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const fields = Object.fromEntries(new FormData(form)) as Record<string, string>;
+      submit.disabled = true;
+      try {
+        const res = await fetch(form.action, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(fields),
+        });
+        const data = (await res.json()) as { ok: boolean; error?: string };
+        if (!data.ok) {
+          feedback.textContent = data.error ?? "Something went wrong.";
+          feedback.className = "booking-feedback error";
+          // Someone else took part of this slot since the page loaded.
+          if (res.status === 409) {
+            const reload = document.createElement("a");
+            reload.href = cancelHref;
+            reload.textContent = "Refresh rooms";
+            feedback.append(" ", reload);
+          }
+          return;
+        }
+        const back = new URLSearchParams(cancelHref);
+        back.set("booked", fields.roomId);
+        back.set("from", fields.start);
+        back.set("to", fields.end);
+        successHref = `?${back}`;
+        done.href = successHref;
+        successText.textContent = `${text("room").textContent}, ${dayLabel}, ${formatRange12(fields.start, fields.end)}. Booked under ${fields.bookedBy.trim()}.`;
+        confirmView.hidden = true;
+        successView.hidden = false;
+        dialog.setAttribute("aria-labelledby", "book-success-title");
+        successView.focus();
+      } catch {
+        feedback.textContent = "Network error, please try again.";
+        feedback.className = "booking-feedback error";
+      } finally {
+        submit.disabled = false;
+      }
+    });
+
+    // Rendered open by the no-JS path: reopen as a real modal so focus is
+    // trapped and Escape works.
+    if (dialog.open) {
+      dialog.close();
+      dialog.showModal();
+      input("bookedBy").focus();
+    }
+  }
+</script>
